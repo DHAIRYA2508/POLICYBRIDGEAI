@@ -6,7 +6,7 @@ from django_filters.rest_framework import DjangoFilterBackend
 from rest_framework import status, generics, permissions, filters
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework.parsers import MultiPartParser, FormParser
+from rest_framework.parsers import MultiPartParser, FormParser, JSONParser
 from django.shortcuts import get_object_or_404
 from django.db.models import Q, Sum
 from .models import Policy, PolicyExtraction
@@ -27,7 +27,7 @@ class PolicyListView(generics.ListCreateAPIView):
     """
     serializer_class = PolicyListSerializer
     permission_classes = [permissions.IsAuthenticated]
-    parser_classes = (MultiPartParser, FormParser)
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
     filter_backends = [DjangoFilterBackend, filters.SearchFilter, filters.OrderingFilter]
     filterset_fields = ['policy_type', 'provider', 'is_active']
     search_fields = ['name', 'provider', 'description', 'policy_number']
@@ -56,7 +56,7 @@ class PolicyDetailView(generics.RetrieveUpdateDestroyAPIView):
     """
     serializer_class = PolicySerializer
     permission_classes = [permissions.IsAuthenticated]
-    parser_classes = (MultiPartParser, FormParser)
+    parser_classes = (MultiPartParser, FormParser, JSONParser)
     
     def get_queryset(self):
         """Return policies for the current user"""
@@ -149,6 +149,7 @@ def policy_stats_view(request):
         'policy_types': {},
         'total_coverage': 0,
         'total_premium': 0,
+        'total_conversations': 0,
         'recent_uploads': policies.order_by('-created_at')[:5].count()
     }
     
@@ -167,8 +168,14 @@ def policy_stats_view(request):
         total=Sum('premium_amount')
     )['total'] or 0
     
+    # Calculate total conversations
+    total_conversations = policies.aggregate(
+        total=Sum('conversation_count')
+    )['total'] or 0
+    
     stats['total_coverage'] = float(total_coverage)
     stats['total_premium'] = float(total_premium)
+    stats['total_conversations'] = int(total_conversations)
     
     return Response(stats, status=status.HTTP_200_OK)
 

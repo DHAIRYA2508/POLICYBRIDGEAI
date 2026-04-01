@@ -42,8 +42,8 @@ const LoginEnhanced = () => {
     
     if (!formData.password) {
       newErrors.password = 'Password is required';
-    } else if (formData.password.length < 6) {
-      newErrors.password = 'Password must be at least 6 characters';
+    } else if (formData.password.length < 8) {
+      newErrors.password = 'Password must be at least 8 characters';
     }
     
     setErrors(newErrors);
@@ -60,23 +60,15 @@ const LoginEnhanced = () => {
     setIsLoading(true);
     
     try {
-      console.log('🔐 Attempting login with:', formData);
       const result = await login(formData);
-      console.log('🔐 Login result:', result);
       if (result.success) {
-        console.log('✅ Login successful, navigating to dashboard');
         navigate('/dashboard');
       } else {
-        console.log('❌ Login failed:', result.error);
         // The error is already handled by the AuthContext and shown via toast
         // Clear any form-level errors since the toast shows the specific error
         setErrors({});
       }
     } catch (error) {
-      console.error('💥 Login error:', error);
-      console.error('💥 Error response:', error.response);
-      console.error('💥 Error status:', error.response?.status);
-      console.error('💥 Error data:', error.response?.data);
       // Error is handled by AuthContext and shown via toast
     } finally {
       setIsLoading(false);

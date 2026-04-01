@@ -105,7 +105,7 @@ const Footer = () => {
           transition={{ duration: 0.6, delay: 0.4 }}
           className="text-center mt-8 pt-4"
         >
-          <p className="text-secondary-200 text-sm flex items-center justify-center space-x-2">
+          <div className="text-secondary-200 text-sm flex items-center justify-center space-x-2">
             <span>Made with</span>
             <motion.div
               animate={{ scale: [1, 1.2, 1] }}
@@ -114,7 +114,7 @@ const Footer = () => {
               <Heart size={16} className="text-accent3-400 fill-current" />
             </motion.div>
             <span>for better policy understanding</span>
-          </p>
+          </div>
         </motion.div>
       </div>
     </footer>

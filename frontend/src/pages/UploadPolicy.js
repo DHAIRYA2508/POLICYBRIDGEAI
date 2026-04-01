@@ -1,6 +1,7 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
 import { policyAPI } from '../services/api';
 import toast from 'react-hot-toast';
 import { 
@@ -16,11 +17,22 @@ import {
 
 const UploadPolicy = () => {
   const navigate = useNavigate();
+  const { requireAuth } = useAuth();
   const [files, setFiles] = useState([]);
   const [isDragOver, setIsDragOver] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState({});
   const [uploadErrors, setUploadErrors] = useState({});
+
+  // Check authentication on component mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      if (!await requireAuth()) {
+        return; // Will redirect to login if not authenticated
+      }
+    };
+    checkAuth();
+  }, [requireAuth]);
 
   const handleDragOver = useCallback((e) => {
     e.preventDefault();

@@ -3,23 +3,23 @@ import axios from 'axios';
 // Create axios instance with base configuration
 const api = axios.create({
   baseURL: process.env.REACT_APP_API_URL || 'http://localhost:8000',
-  timeout: 30000,
+  timeout: 120000, // Increased to 2 minutes for AI operations
   headers: {
     'Content-Type': 'application/json',
   },
 });
+
+// Simple token storage
+let authToken = null;
 
 // Request interceptor to add auth token
 api.interceptors.request.use(
   (config) => {
     // Don't add token for authentication requests
     if (!config.url?.includes('/auth/login/') && !config.url?.includes('/auth/register/')) {
-      const token = localStorage.getItem('token') || localStorage.getItem('access');
+      const token = authToken || localStorage.getItem('token');
       if (token) {
         config.headers.Authorization = `Bearer ${token}`;
-        console.log('🔑 API Request: Token added to', config.url);
-      } else {
-        console.log('⚠️ API Request: No token found for', config.url);
       }
     }
     return config;
@@ -29,36 +29,22 @@ api.interceptors.request.use(
   }
 );
 
-// Response interceptor to handle auth errors
+// Simple response interceptor
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    console.log('❌ API Response Error:', error.response?.status, error.response?.data);
-    
-    // Only redirect to login for 401 errors on authenticated requests
-    // Don't redirect if it's a login/register request that failed
-    // Don't redirect if user is already on login page or if it's a profile check
-    if (error.response?.status === 401 && 
-        !error.config?.url?.includes('/auth/login/') && 
-        !error.config?.url?.includes('/auth/register/') &&
-        !error.config?.url?.includes('/users/profile/') &&
-        window.location.pathname !== '/login') {
+    // Handle 401 errors by redirecting to login
+    if (error.response?.status === 401) {
+      removeAuthToken();
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
       
-      // Check if we actually have a user token before redirecting
-      const token = localStorage.getItem('token');
-      const user = localStorage.getItem('user');
-      
-      if (token && user) {
-        // Token exists but server says it's invalid - clear and redirect
-        console.log('🔑 Token expired, redirecting to login');
-        localStorage.removeItem('token');
-        localStorage.removeItem('user');
+      // Only redirect if not already on login page
+      if (window.location.pathname !== '/login') {
         window.location.href = '/login';
-      } else {
-        // No token, just log the error without redirecting
-        console.log('🔑 No token found, not redirecting');
       }
     }
+    
     return Promise.reject(error);
   }
 );
@@ -75,26 +61,26 @@ export const authAPI = {
   logout: () => api.post('/api/users/auth/logout/'),
   
   // Get user profile
-  getProfile: () => api.get('/api/users/users/profile/'),
+  getProfile: () => api.get('/api/users/profile/'),
   
   // Update user profile
-  updateProfile: (userData) => api.put('/api/users/users/profile/', userData),
+  updateProfile: (userData) => api.put('/api/users/profile/', userData),
   
   // Get user statistics
-  getUserStats: () => api.get('/api/users/users/stats/'),
+  getUserStats: () => api.get('/api/users/stats/'),
 };
 
 // Policy API
 export const policyAPI = {
   // Get all policies
-  getPolicies: (params) => api.get('/api/policies/policies/', { params }),
+  getPolicies: (params) => api.get('/api/policies/', { params }),
   
   // Get single policy
-  getPolicy: (id) => api.get(`/api/policies/policies/${id}/`),
+  getPolicy: (id) => api.get(`/api/policies/${id}/`),
   
   // Upload new policy
   uploadPolicy: (formData) => {
-    return api.post('/api/policies/policies/', formData, {
+    return api.post('/api/policies/', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -117,7 +103,7 @@ export const policyAPI = {
       }
     });
     
-    return api.post('/api/policies/policies/', formData, {
+    return api.post('/api/policies/', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -128,7 +114,7 @@ export const policyAPI = {
   updatePolicy: (id, policyData) => {
     // For text-only updates (name, provider, policy_type), use JSON
     if (!policyData.document) {
-      return api.put(`/api/policies/policies/${id}/`, policyData);
+      return api.put(`/api/policies/${id}/`, policyData);
     }
     
     // For updates with files, use FormData
@@ -146,7 +132,7 @@ export const policyAPI = {
       }
     });
     
-    return api.put(`/api/policies/policies/${id}/`, formData, {
+    return api.put(`/api/policies/${id}/`, formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
       },
@@ -154,7 +140,7 @@ export const policyAPI = {
   },
   
   // Delete policy
-  deletePolicy: (id) => api.delete(`/api/policies/policies/${id}/`),
+  deletePolicy: (id) => api.delete(`/api/policies/${id}/`),
   
   // Search policies
   searchPolicies: (params) => api.get('/api/policies/search/', { params }),
@@ -163,7 +149,7 @@ export const policyAPI = {
   getPolicyStats: () => api.get('/api/policies/stats/'),
   
   // Bulk delete policies
-  bulkDeletePolicies: (policyIds) => api.post('/api/policies/policies/bulk-delete/', { policy_ids: policyIds }),
+  bulkDeletePolicies: (policyIds) => api.post('/api/policies/bulk-delete/', { policy_ids: policyIds }),
 };
 
 // AI API endpoints
@@ -204,16 +190,7 @@ export const aiAPI = {
     }
   },
 
-  // Test Gemini connection
-  testGemini: async () => {
-    try {
-      const response = await api.get('/api/ai/test-connection/');
-      return response.data;
-    } catch (error) {
-      console.error('Error testing Gemini connection:', error);
-      throw error;
-    }
-  },
+
 
   // Query specific policy
   queryPolicy: async (queryData) => {
@@ -274,19 +251,19 @@ export const aiAPI = {
 // Utility functions
 export const setAuthToken = (token) => {
   if (token) {
+    authToken = token;
     localStorage.setItem('token', token);
-    localStorage.setItem('access', token); // Store in both places for compatibility
     api.defaults.headers.common['Authorization'] = `Bearer ${token}`;
   } else {
+    authToken = null;
     localStorage.removeItem('token');
-    localStorage.removeItem('access');
     delete api.defaults.headers.common['Authorization'];
   }
 };
 
 export const removeAuthToken = () => {
+  authToken = null;
   localStorage.removeItem('token');
-  localStorage.removeItem('access');
   delete api.defaults.headers.common['Authorization'];
 };
 

@@ -15,7 +15,7 @@ urlpatterns = [
     path('auth/token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
     
     # User management endpoints
-    path('users/profile/', views.UserProfileView.as_view(), name='user-profile'),
-    path('users/stats/', views.user_stats_view, name='user-stats'),
-    path('users/list/', views.UserListView.as_view(), name='user-list'),
+    path('profile/', views.UserProfileView.as_view(), name='user-profile'),
+    path('stats/', views.user_stats_view, name='user-stats'),
+    path('list/', views.UserListView.as_view(), name='user-list'),
 ]

@@ -67,6 +67,7 @@ class Policy(models.Model):
     description = models.TextField(blank=True, verbose_name='Description')
     tags = models.JSONField(default=list, blank=True, verbose_name='Tags')
     is_active = models.BooleanField(default=True, verbose_name='Active')
+    conversation_count = models.PositiveIntegerField(default=0, verbose_name='Conversation Count')
     created_at = models.DateTimeField(auto_now_add=True, verbose_name='Created At')
     updated_at = models.DateTimeField(auto_now=True, verbose_name='Updated At')
     
@@ -99,7 +100,44 @@ class Policy(models.Model):
     
     def get_file_name(self):
         """Get the original filename"""
-        return os.path.basename(self.document.name)
+        if self.document:
+            return os.path.basename(self.document.name)
+        return "No file"
+    
+    def increment_conversation_count(self):
+        """Increment the conversation count for this policy"""
+        self.conversation_count += 1
+        self.save(update_fields=['conversation_count'])
+    
+    def get_conversation_count(self):
+        """Get the current conversation count"""
+        return self.conversation_count
+    
+    def recalculate_conversation_count(self):
+        """Recalculate conversation count from actual conversations"""
+        try:
+            from ai.models import Conversation
+            count = Conversation.objects.filter(
+                user=self.user,
+                policy=self,
+                is_active=True
+            ).count()
+            self.conversation_count = count
+            self.save(update_fields=['conversation_count'])
+            return count
+        except Exception as e:
+            # If there's an error, return current count
+            return self.conversation_count
+    
+    @classmethod
+    def get_total_conversation_count_for_user(cls, user):
+        """Get total conversation count for all policies of a user"""
+        try:
+            return cls.objects.filter(user=user).aggregate(
+                total=models.Sum('conversation_count')
+            )['total'] or 0
+        except Exception as e:
+            return 0
     
     def get_file_extension(self):
         """Get the file extension"""

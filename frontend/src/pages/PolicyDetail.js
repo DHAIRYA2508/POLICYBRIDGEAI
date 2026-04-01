@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '../context/AuthContext';
 import { policyAPI, aiAPI } from '../services/api';
-import toast from 'react-hot-toast';
 import { 
   ArrowLeft, 
   FileText, 
@@ -13,19 +12,28 @@ import {
   BarChart3, 
   Calendar,
   Clock,
-  User,
-
   MoreHorizontal
 } from 'lucide-react';
 
 const PolicyDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
+  const { requireAuth } = useAuth();
   const [showDeleteModal, setShowDeleteModal] = useState(false);
 
   // Real policy data - will be fetched from backend
   const [policy, setPolicy] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Check authentication on component mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      if (!await requireAuth()) {
+        return; // Will redirect to login if not authenticated
+      }
+    };
+    checkAuth();
+  }, [requireAuth]);
 
   // Fetch policy data
   useEffect(() => {
@@ -40,19 +48,17 @@ const PolicyDetail = () => {
           // Extract real policy details from the document using AI
           try {
             const extractedDetails = await aiAPI.extractPolicyDetails(policyData.id);
-            console.log('Extracted details:', extractedDetails.data);
+
             
             setPolicy({
               ...policyData,
               ...extractedDetails.data
             });
           } catch (extractError) {
-            console.error('Error extracting policy details:', extractError);
             // Use policy data without extraction
             setPolicy(policyData);
           }
         } catch (error) {
-          console.error('Error fetching policy:', error);
           // Set fallback data if API fails
           setPolicy({
             id,
@@ -79,7 +85,7 @@ const PolicyDetail = () => {
           });
         }
       } catch (error) {
-        console.error('Error fetching policy data:', error);
+        // Error handled silently
       } finally {
         setLoading(false);
       }
@@ -89,47 +95,6 @@ const PolicyDetail = () => {
       fetchPolicyData();
     }
   }, [id]);
-
-  // Function to extract policy details using AI
-  const extractPolicyDetails = async (policyData) => {
-    try {
-      // Call AI service to extract policy details
-      const extractionResponse = await aiAPI.extractPolicyDetails(policyData.id);
-      
-      if (extractionResponse.data) {
-        return {
-          description: extractionResponse.data.summary || 'Policy document uploaded by user.',
-          metadata: {
-            effectiveDate: extractionResponse.data.effectiveDate || 'N/A',
-            expiryDate: extractionResponse.data.expiryDate || 'N/A',
-            department: extractionResponse.data.department || 'N/A',
-            coverage: extractionResponse.data.coverage || 'N/A',
-            deductible: extractionResponse.data.deductible || 'N/A',
-            maxOutOfPocket: extractionResponse.data.maxOutOfPocket || 'N/A'
-          },
-          tags: extractionResponse.data.tags || [],
-          recentActivity: extractionResponse.data.recentActivity || []
-        };
-      }
-    } catch (error) {
-      console.error('Error extracting policy details:', error);
-    }
-    
-    // Return default values if extraction fails
-    return {
-      description: 'Policy document uploaded by user.',
-      metadata: {
-        effectiveDate: 'N/A',
-        expiryDate: 'N/A',
-        department: 'N/A',
-        coverage: 'N/A',
-        deductible: 'N/A',
-        maxOutOfPocket: 'N/A'
-      },
-      tags: [],
-      recentActivity: []
-    };
-  };
 
   const quickActions = [
     {
@@ -166,7 +131,7 @@ const PolicyDetail = () => {
       icon: Share2,
       title: 'Share',
       description: 'Share with team members',
-      action: () => console.log('Share'),
+              action: () => {},
       color: 'from-secondary-600 to-secondary-700'
     }
   ];

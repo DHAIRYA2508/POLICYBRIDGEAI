@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: policybridge-backend
+    env: python
+    region: ohio
+    plan: free
+    buildCommand: "./build.sh"
+    startCommand: "gunicorn policybridge_backend.wsgi:application"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.10.0
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: 'False'
+      - key: GEMINI_API_KEY
+        sync: false # User must provide this in the Render dashboard
+    autoDeploy: false

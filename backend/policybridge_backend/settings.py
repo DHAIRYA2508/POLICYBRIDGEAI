@@ -7,6 +7,7 @@ from pathlib import Path
 from datetime import timedelta
 from dotenv import load_dotenv
 from decouple import config
+import dj_database_url
 
 # Load environment variables
 load_dotenv()
@@ -20,7 +21,9 @@ SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-change-this-in-produc
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.environ.get('DEBUG', 'True').lower() == 'true'
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '*').split(',')
+if '*' not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append('*')  # Allow all for easier free deployments
 
 # Application definition
 INSTALLED_APPS = [
@@ -46,6 +49,7 @@ INSTALLED_APPS = [
 MIDDLEWARE = [
     'corsheaders.middleware.CorsMiddleware',
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -76,10 +80,10 @@ WSGI_APPLICATION = 'policybridge_backend.wsgi.application'
 
 # Database
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.config(
+        default='sqlite:///' + str(BASE_DIR / 'db.sqlite3'),
+        conn_max_age=600
+    )
 }
 
 # Password validation
@@ -140,8 +144,8 @@ SIMPLE_JWT = {
     'ACCESS_TOKEN_LIFETIME': timedelta(hours=1),
     'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
     'ROTATE_REFRESH_TOKENS': False,
-    'BLACKLIST_AFTER_ROTATION': False,
-    'UPDATE_LAST_LOGIN': True,
+    'BLACKLIST_AFTER_ROTATION': True,
+    'UPDATE_LAST_LOGIN': False,
     'ALGORITHM': 'HS256',
     'SIGNING_KEY': SECRET_KEY,
     'VERIFYING_KEY': None,
@@ -151,26 +155,13 @@ SIMPLE_JWT = {
 }
 
 # CORS Settings
-CORS_ALLOWED_ORIGINS = [
-    "http://localhost:3000",
-    "http://127.0.0.1:3000",
-    "http://localhost:3001",
-    "http://127.0.0.1:3001",
-]
+CORS_ALLOW_ALL_ORIGINS = True # Simplified for free deployment
 
 CORS_ALLOW_CREDENTIALS = True
 
 # Gemini AI Configuration
-GEMINI_API_KEY = config('GEMINI_API_KEY', default='AIzaSyC7g0gjdt3rO-41QxV60KBLVioWrgCLROQ')
+GEMINI_API_KEY = config('GEMINI_API_KEY', default=None)
 GEMINI_MODEL = config('GEMINI_MODEL', default='gemini-2.5-flash')
-
-# Log Gemini configuration status
-if GEMINI_API_KEY:
-    print(f"✅ Gemini API key configured, using model: {GEMINI_MODEL}")
-else:
-    print("⚠️  GEMINI_API_KEY not set. Using intelligent mock mode for policy analysis.")
-    print("   To enable real AI analysis, set GEMINI_API_KEY in your .env file")
-    print("   Get your API key from: https://makersuite.google.com/app/apikey")
 
 # File Upload Settings
 MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB

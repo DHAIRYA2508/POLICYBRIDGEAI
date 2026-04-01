@@ -14,40 +14,21 @@ export const useAuth = () => {
 
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false); // Changed to false since we don't auto-login
 
-  // Check if user is logged in on app start
+  // Check if user is logged in on app start (but don't auto-login)
   useEffect(() => {
     const checkAuthStatus = async () => {
       const token = localStorage.getItem('token');
       const userData = localStorage.getItem('user');
       
+      // Only set the token and user if they exist, but don't validate with server
       if (token && userData) {
         try {
           setAuthToken(token);
           setUser(JSON.parse(userData));
-          
-          // Only verify token if we're not already on login page
-          if (window.location.pathname !== '/login') {
-            try {
-              const response = await authAPI.getProfile();
-              setUser(response.data);
-              localStorage.setItem('user', JSON.stringify(response.data));
-            } catch (error) {
-              console.error('Error verifying token:', error);
-              // Only clear if it's a 401 error (token expired)
-              if (error.response?.status === 401) {
-                removeAuthToken();
-                setUser(null);
-                localStorage.removeItem('user');
-                localStorage.removeItem('token');
-                // Don't redirect automatically - let the user continue
-              }
-            }
-          }
         } catch (error) {
           console.error('Error parsing user data:', error);
-          // Clear invalid user data
           removeAuthToken();
           setUser(null);
           localStorage.removeItem('user');
@@ -60,33 +41,52 @@ export const AuthProvider = ({ children }) => {
     checkAuthStatus();
   }, []);
 
+  // Add event listener for tab close/refresh to auto-logout
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // Clear authentication data when tab is closed or refreshed
+      localStorage.removeItem('token');
+      localStorage.removeItem('user');
+      removeAuthToken();
+    };
+
+    const handleVisibilityChange = () => {
+      // Only clear authentication data when tab becomes hidden AND user is not actively logged in
+      // This prevents clearing data during normal app usage
+      if (document.hidden && !user) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('user');
+        removeAuthToken();
+        setUser(null);
+      }
+    };
+
+    // Add event listeners
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    // Cleanup event listeners
+    return () => {
+      window.removeEventListener('beforeunload', handleBeforeUnload);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [user]); // Add user as dependency to prevent stale closure
+
   const login = async (credentials) => {
     try {
-      console.log('🔑 AuthContext: Starting login process');
-      console.log('🔑 AuthContext: Credentials:', credentials);
-      console.log('🔑 AuthContext: API URL:', process.env.REACT_APP_API_URL || 'http://localhost:8000/api');
-      
       const response = await authAPI.login(credentials);
-      console.log('🔑 AuthContext: Login response:', response);
-      console.log('🔑 AuthContext: Response data:', response.data);
       
       const { access, user: userData } = response.data;
-      console.log('🔑 AuthContext: Access token:', access);
-      console.log('🔑 AuthContext: User data:', userData);
       
+      localStorage.setItem('token', access);
+      localStorage.setItem('user', JSON.stringify(userData));
       setAuthToken(access);
       setUser(userData);
-      localStorage.setItem('user', JSON.stringify(userData));
-      localStorage.setItem('token', access); // Store token with correct key
       
-      console.log('🔑 AuthContext: Login successful, user set');
       toast.success('Welcome back! Login successful.');
       return { success: true };
     } catch (error) {
-      console.error('🔑 AuthContext: Login error:', error);
-      console.error('🔑 AuthContext: Error response:', error.response);
-      console.error('🔑 AuthContext: Error status:', error.response?.status);
-      console.error('🔑 AuthContext: Error data:', error.response?.data);
+      console.error('❌ Login failed:', error);
       
       let errorMessage = 'Login failed. Please try again.';
       
@@ -106,22 +106,56 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Function to validate existing token with server
+  const validateToken = async () => {
+    const token = localStorage.getItem('token');
+    if (!token) return false;
+
+    try {
+      setAuthToken(token);
+      const response = await authAPI.getProfile();
+      const userData = response.data;
+      
+      setUser(userData);
+      localStorage.setItem('user', JSON.stringify(userData));
+      return true;
+    } catch (error) {
+      console.error('Token validation failed:', error);
+      // Clear invalid token
+      removeAuthToken();
+      setUser(null);
+      localStorage.removeItem('user');
+      localStorage.removeItem('token');
+      return false;
+    }
+  };
+
+  // Function to check if user should be redirected to login
+  const requireAuth = async () => {
+    if (!user) {
+      const isValid = await validateToken();
+      if (!isValid) {
+        // Redirect to login if no valid token
+        window.location.href = '/login';
+        return false;
+      }
+    }
+    return true;
+  };
+
   const register = async (userData) => {
     try {
       const response = await authAPI.register(userData);
       const { access, user: newUser } = response.data;
       
+      localStorage.setItem('token', access);
+      localStorage.setItem('user', JSON.stringify(newUser));
       setAuthToken(access);
       setUser(newUser);
-      localStorage.setItem('user', JSON.stringify(newUser));
-      localStorage.setItem('token', access); // Store token with correct key
       
       toast.success('Account created successfully! Welcome to PolicyBridge AI.');
       return { success: true };
     } catch (error) {
-      console.error('🔑 AuthContext: Registration error:', error);
-      console.error('🔑 AuthContext: Error response:', error.response);
-      console.error('🔑 AuthContext: Error data:', error.response?.data);
       
       let errorMessage = 'Registration failed. Please try again.';
       
@@ -152,7 +186,7 @@ export const AuthProvider = ({ children }) => {
         await authAPI.logout();
       }
     } catch (error) {
-      console.error('Logout error:', error);
+      // Logout error handled silently
     } finally {
       setUser(null);
       removeAuthToken();
@@ -201,6 +235,8 @@ export const AuthProvider = ({ children }) => {
     logout,
     updateUser,
     refreshProfile,
+    validateToken,
+    requireAuth,
     loading,
     isAuthenticated: !!user
   };

@@ -12,6 +12,7 @@ from .serializers import (
     UserProfileSerializer,
     UserListSerializer
 )
+from rest_framework.permissions import IsAuthenticated
 
 User = get_user_model()
 
@@ -142,14 +143,25 @@ def logout_view(request):
 
 
 @api_view(['GET'])
-@permission_classes([permissions.IsAuthenticated])
+@permission_classes([IsAuthenticated])
 def user_stats_view(request):
     """
     Get user statistics
     """
     user = request.user
+    
+    # Calculate total conversation count from all policies
+    total_conversations = 0
+    try:
+        from policies.models import Policy
+        total_conversations = Policy.get_total_conversation_count_for_user(user)
+    except Exception as e:
+        # If there's an error, default to 0
+        total_conversations = 0
+    
     return Response({
         'total_policies': user.policy_set.count() if hasattr(user, 'policy_set') else 0,
+        'total_conversations': total_conversations,
         'member_since': user.date_joined,
         'last_login': user.last_login
     }, status=status.HTTP_200_OK)

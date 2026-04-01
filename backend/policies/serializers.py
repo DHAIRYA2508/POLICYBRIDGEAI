@@ -32,7 +32,7 @@ class PolicySerializer(serializers.ModelSerializer):
             'coverage_amount', 'premium_amount', 'start_date', 'end_date',
             'document', 'file_size', 'file_type', 'description', 'tags',
             'is_active', 'created_at', 'updated_at', 'extraction',
-            'file_name', 'file_extension', 'formatted_file_size'
+            'file_name', 'file_extension', 'formatted_file_size', 'conversation_count'
         ]
         read_only_fields = ['id', 'user', 'file_size', 'file_type', 'created_at', 'updated_at']
     
@@ -87,7 +87,7 @@ class PolicyUpdateSerializer(serializers.ModelSerializer):
         fields = [
             'name', 'provider', 'policy_type', 'policy_number',
             'coverage_amount', 'premium_amount', 'start_date', 'end_date',
-            'description', 'tags', 'is_active'
+            'description', 'tags', 'is_active', 'document'
         ]
 
 
@@ -104,7 +104,8 @@ class PolicyListSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'user', 'name', 'provider', 'policy_type', 'policy_number',
             'coverage_amount', 'premium_amount', 'start_date', 'end_date',
-            'file_size', 'file_type', 'is_active', 'created_at', 'file_name', 'formatted_file_size'
+            'file_size', 'file_type', 'is_active', 'created_at', 'file_name', 
+            'formatted_file_size', 'conversation_count'
         ]
     
     def get_file_name(self, obj):

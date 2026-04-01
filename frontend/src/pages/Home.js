@@ -1,5 +1,5 @@
-import React, { useState, useRef } from 'react';
-import { motion, useInView } from 'framer-motion';
+import React, { useRef } from 'react';
+import { motion } from 'framer-motion';
 import { Link } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { TypeAnimation } from 'react-type-animation';
@@ -21,7 +21,9 @@ const Home = () => {
   const auth = useAuth();
   const user = auth?.user || null;
   const ref = useRef(null);
-  const isInView = useInView(ref);
+
+  // Don't automatically validate token on home page
+  // Users must explicitly log in to access authenticated features
 
   const features = [
     {

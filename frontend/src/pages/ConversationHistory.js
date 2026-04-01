@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
+import { useAuth } from '../context/AuthContext';
 import { 
   MessageSquare, 
   Search, 
@@ -19,6 +20,7 @@ import { useNavigate } from 'react-router-dom';
 
 const ConversationHistory = () => {
   const navigate = useNavigate();
+  const { requireAuth } = useAuth();
   const [searchTerm, setSearchTerm] = useState('');
   const [filterType, setFilterType] = useState('all');
   const [sortBy, setSortBy] = useState('recent');
@@ -27,12 +29,22 @@ const ConversationHistory = () => {
   const [conversations, setConversations] = useState([]);
   const [loading, setLoading] = useState(true);
 
+  // Check authentication on component mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      if (!await requireAuth()) {
+        return; // Will redirect to login if not authenticated
+      }
+    };
+    checkAuth();
+  }, [requireAuth]);
+
   // Fetch conversations
   useEffect(() => {
     const fetchConversations = async () => {
       try {
         setLoading(true);
-        // TODO: Fetch conversations from backend
+    
         // const response = await aiAPI.getConversations();
         // setConversations(response.data);
         
@@ -124,12 +136,12 @@ const ConversationHistory = () => {
 
   const handleDeleteConversation = (conversationId) => {
     // Handle delete logic here
-    console.log('Delete conversation:', conversationId);
+
   };
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-accent1-50 flex items-center justify-center">
+      <div className="bg-gradient-to-br from-primary-50 via-white to-accent1-50 flex items-center justify-center py-20">
         <div className="text-center">
           <div className="w-16 h-16 border-4 border-secondary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
           <p className="text-text-secondary">Loading conversations...</p>
@@ -140,7 +152,7 @@ const ConversationHistory = () => {
 
   if (conversations.length === 0) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-accent1-50 flex items-center justify-center">
+      <div className="bg-gradient-to-br from-primary-50 via-white to-accent1-50 flex items-center justify-center py-20">
         <div className="text-center">
           <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4">
             <MessageSquare size={24} className="text-blue-500" />
@@ -159,7 +171,7 @@ const ConversationHistory = () => {
   }
 
   return (
-    <div className="min-h-screen bg-primary-50 py-8">
+    <div className="bg-primary-50 py-8">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         {/* Header */}
         <motion.div

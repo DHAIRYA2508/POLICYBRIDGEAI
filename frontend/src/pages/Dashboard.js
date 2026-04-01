@@ -1,10 +1,9 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { policyAPI, aiAPI } from '../services/api';
 import toast from 'react-hot-toast';
-
 import { 
   Search, 
   Plus, 
@@ -13,26 +12,309 @@ import {
   Eye, 
   Trash2, 
   FileText,
-  Clock,
   BarChart3,
   Upload,
-  Settings,
   RefreshCw,
   X,
   Bot,
   FileText as FileTextIcon,
   Calendar as CalendarIcon,
-  User as UserIcon,
-  Building,
-  Tag,
-  Shield,
   Edit,
   Brain,
-  Wifi
+  Shield,
+  Tag
 } from 'lucide-react';
 
+// Add ocean theme CSS animations
+const oceanAnimationStyles = `
+  @keyframes oceanWave {
+    0%, 100% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+  }
+  
+  @keyframes waveFlow {
+    0% { transform: translateX(-100%); }
+    100% { transform: translateX(100%); }
+  }
+  
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+  }
+`;
+
+// Inject styles
+if (!document.getElementById('ocean-theme-styles')) {
+  const style = document.createElement('style');
+  style.id = 'ocean-theme-styles';
+  style.textContent = oceanAnimationStyles;
+  document.head.appendChild(style);
+}
+
+// Function to format policy summary text into structured sections
+const formatPolicySummary = (summaryText) => {
+  if (!summaryText || typeof summaryText !== 'string') {
+    return <p className="text-gray-600">No summary available</p>;
+  }
+
+  // Clean the text from any formatting symbols and remove introductory text
+  const cleanText = summaryText
+    .replace(/[•◦▪▫★☆♦◆■□▲△▼▽]/g, '') // Remove bullet symbols
+    .replace(/^\s*[\*\-\+\•]\s*/gm, '') // Remove bullet prefixes at line start
+    .replace(/#{1,6}\s*/g, '') // Remove markdown headers
+    .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1') // Remove bold/italic markdown
+    .replace(/^\s*[\*\-\+]\s*/gm, '') // Remove list markers
+    .replace(/\s*\*\s*/g, ' ') // Remove any remaining asterisks with spaces
+    .replace(/\s*\+\s*/g, ' ') // Remove any remaining plus signs with spaces
+    .replace(/\s*-\s*/g, ' ') // Remove any remaining minus signs with spaces
+    .replace(/\s{2,}/g, ' ') // Replace multiple spaces with single space
+    .replace(/^Here's a comprehensive and detailed analysis of the .* policy document:\s*/i, '') // Remove intro text
+    .replace(/^.*comprehensive.*analysis.*document:\s*/i, '') // Remove any variation of intro text
+    .trim();
+
+  // Split the text into sections based on headers (both all caps and mixed case)
+  const sections = cleanText.split(/(?=^[A-Z][A-Z\s:]+:?$|^[A-Z][a-z]+(?:\s+[A-Z][a-z]*)*:?$)/m);
+  
+  return sections.map((section, index) => {
+    if (!section.trim()) return null;
+    
+    const lines = section.trim().split('\n');
+    const header = lines[0].trim();
+    const content = lines.slice(1).filter(line => line.trim()).join('\n');
+    
+    if (!content) return null;
+    
+    // Get color scheme based on section type
+    const getColorScheme = (headerText) => {
+      const text = headerText.toUpperCase();
+      
+      // Primary categories with light, sober colors
+      if (text.includes('SUMMARY') || text.includes('OVERVIEW')) {
+        return {
+          container: 'border border-blue-200 bg-blue-25 shadow-sm',
+          header: 'bg-blue-100 text-blue-800 font-semibold text-lg',
+          bullet: 'bg-blue-300',
+          text: 'text-blue-700'
+        };
+      }
+      if (text.includes('COVERAGE') || text.includes('DETAILS')) {
+        return {
+          container: 'border border-green-200 bg-green-25 shadow-sm',
+          header: 'bg-green-100 text-green-800 font-semibold text-lg',
+          bullet: 'bg-green-300',
+          text: 'text-green-700'
+        };
+      }
+      if (text.includes('KEY DATES') || text.includes('DATES') || text.includes('VALIDITY') || text.includes('PERIOD')) {
+        return {
+          container: 'border border-purple-200 bg-purple-25 shadow-sm',
+          header: 'bg-purple-100 text-purple-800 font-semibold text-lg',
+          bullet: 'bg-purple-300',
+          text: 'text-purple-700'
+        };
+      }
+      if (text.includes('FINANCIAL') || text.includes('TERMS') || text.includes('PREMIUM') || text.includes('DEDUCTIBLE')) {
+        return {
+          container: 'border border-orange-200 bg-orange-25 shadow-sm',
+          header: 'bg-orange-100 text-orange-800 font-semibold text-lg',
+          bullet: 'bg-orange-300',
+          text: 'text-orange-700'
+        };
+      }
+      if (text.includes('POLICY TYPE') || text.includes('PROVIDER') || text.includes('INSURER')) {
+        return {
+          container: 'border border-indigo-200 bg-indigo-25 shadow-sm',
+          header: 'bg-indigo-100 text-indigo-800 font-semibold text-lg',
+          bullet: 'bg-indigo-300',
+          text: 'text-indigo-700'
+        };
+      }
+      if (text.includes('RISK') || text.includes('ASSESSMENT')) {
+        return {
+          container: 'border border-red-200 bg-red-25 shadow-sm',
+          header: 'bg-red-100 text-red-800 font-semibold text-lg',
+          bullet: 'bg-red-300',
+          text: 'text-red-700'
+        };
+      }
+      if (text.includes('TIPS') || text.includes('OPTIMIZATION')) {
+        return {
+          container: 'border border-amber-200 bg-amber-25 shadow-sm',
+          header: 'bg-amber-100 text-amber-800 font-semibold text-lg',
+          bullet: 'bg-amber-300',
+          text: 'text-amber-700'
+        };
+      }
+      if (text.includes('MARKET') || text.includes('COMPARISON')) {
+        return {
+          container: 'border border-teal-200 bg-teal-25 shadow-sm',
+          header: 'bg-teal-100 text-teal-800 font-semibold text-lg',
+          bullet: 'bg-teal-300',
+          text: 'text-teal-700'
+        };
+      }
+      
+      // Specific subcategories with light, sober colors
+      if (text.includes('CLAIM TIMELINES') || text.includes('CLAIM') || text.includes('TIMELINES')) {
+        return {
+          container: 'border border-pink-200 bg-pink-25 shadow-sm',
+          header: 'bg-pink-100 text-pink-800 font-semibold text-lg',
+          bullet: 'bg-pink-300',
+          text: 'text-pink-700'
+        };
+      }
+      if (text.includes('PLANNED HOSPITALIZATION') || text.includes('HOSPITALIZATION') || text.includes('PLANNED')) {
+        return {
+          container: 'border border-cyan-200 bg-cyan-25 shadow-sm',
+          header: 'bg-cyan-100 text-cyan-800 font-semibold text-lg',
+          bullet: 'bg-cyan-300',
+          text: 'text-cyan-700'
+        };
+      }
+      if (text.includes('EMERGENCY') || text.includes('URGENT')) {
+        return {
+          container: 'border border-rose-200 bg-rose-25 shadow-sm',
+          header: 'bg-rose-100 text-rose-800 font-semibold text-lg',
+          bullet: 'bg-rose-300',
+          text: 'text-rose-700'
+        };
+      }
+      if (text.includes('WAITING PERIODS') || text.includes('WAITING') || text.includes('PERIODS')) {
+        return {
+          container: 'border border-yellow-200 bg-yellow-25 shadow-sm',
+          header: 'bg-yellow-100 text-yellow-800 font-semibold text-lg',
+          bullet: 'bg-yellow-300',
+          text: 'text-yellow-700'
+        };
+      }
+      if (text.includes('EXCLUSIONS') || text.includes('NOT COVERED')) {
+        return {
+          container: 'border border-slate-200 bg-slate-25 shadow-sm',
+          header: 'bg-slate-100 text-slate-800 font-semibold text-lg',
+          bullet: 'bg-slate-300',
+          text: 'text-slate-700'
+        };
+      }
+      if (text.includes('WELLNESS') || text.includes('BENEFITS') || text.includes('PREVENTIVE')) {
+        return {
+          container: 'border border-emerald-200 bg-emerald-25 shadow-sm',
+          header: 'bg-emerald-100 text-emerald-800 font-semibold text-lg',
+          bullet: 'bg-emerald-300',
+          text: 'text-emerald-700'
+        };
+      }
+      if (text.includes('NETWORK') || text.includes('HOSPITALS') || text.includes('CASHLESS')) {
+        return {
+          container: 'border border-sky-200 bg-sky-25 shadow-sm',
+          header: 'bg-sky-100 text-sky-800 font-semibold text-lg',
+          bullet: 'bg-sky-300',
+          text: 'text-sky-700'
+        };
+      }
+      if (text.includes('BONUS') || text.includes('NO-CLAIM') || text.includes('REWARDS')) {
+        return {
+          container: 'border border-violet-200 bg-violet-25 shadow-sm',
+          header: 'bg-violet-100 text-violet-800 font-semibold text-lg',
+          bullet: 'bg-violet-300',
+          text: 'text-violet-700'
+        };
+      }
+      if (text.includes('PORTABILITY') || text.includes('RENEWAL') || text.includes('TRANSFER')) {
+        return {
+          container: 'border border-lime-200 bg-lime-25 shadow-sm',
+          header: 'bg-lime-100 text-lime-800 font-semibold text-lg',
+          bullet: 'bg-lime-300',
+          text: 'text-lime-700'
+        };
+      }
+      
+      // Additional light, sober colors for any other categories
+      const colorSchemes = [
+        {
+          container: 'border border-zinc-200 bg-zinc-25 shadow-sm',
+          header: 'bg-zinc-100 text-zinc-800 font-semibold text-lg',
+          bullet: 'bg-zinc-300',
+          text: 'text-zinc-700'
+        },
+        {
+          container: 'border border-stone-200 bg-stone-25 shadow-sm',
+          header: 'bg-stone-100 text-stone-800 font-semibold text-lg',
+          bullet: 'bg-stone-300',
+          text: 'text-stone-700'
+        },
+        {
+          container: 'border border-neutral-200 bg-neutral-25 shadow-sm',
+          header: 'bg-neutral-100 text-neutral-800 font-semibold text-lg',
+          bullet: 'bg-neutral-300',
+          text: 'text-neutral-700'
+        }
+      ];
+      
+      // Use hash of header text to consistently assign colors
+      const hash = headerText.split('').reduce((a, b) => {
+        a = ((a << 5) - a) + b.charCodeAt(0);
+        return a & a;
+      }, 0);
+      
+      return colorSchemes[Math.abs(hash) % colorSchemes.length] || {
+        container: 'border border-gray-200 bg-gray-25 shadow-sm',
+        header: 'bg-gray-100 text-gray-800 font-semibold text-lg',
+        bullet: 'bg-gray-300',
+        text: 'text-gray-700'
+      };
+    };
+
+    const colors = getColorScheme(header);
+
+    // Process content to determine if it should be paragraph or bullet points
+    const contentLines = content.split('\n').filter(line => line.trim());
+    const cleanLines = contentLines.map(line => 
+      line
+        .replace(/^[\s\*\-\+\•◦▪▫★☆♦◆■□▲△▼▽]+/, '') // Remove leading symbols
+        .replace(/\s*\*\s*/g, ' ') // Remove any remaining asterisks
+        .replace(/\s*\+\s*/g, ' ') // Remove any remaining plus signs
+        .replace(/\s*-\s*/g, ' ') // Remove any remaining minus signs
+        .replace(/\s{2,}/g, ' ') // Replace multiple spaces with single space
+        .trim()
+    );
+    
+    // If content is short paragraph-style, show as paragraph
+    if (contentLines.length <= 2 && !contentLines.some(line => line.length < 100)) {
+      return (
+        <div key={index} className={`rounded-lg ${colors.container} overflow-hidden mb-4`}>
+          <div className={`px-4 py-3 ${colors.header}`}>
+            {header}
+          </div>
+          <div className="p-4">
+            <p className={`${colors.text} leading-relaxed`}>{content}</p>
+          </div>
+        </div>
+      );
+    }
+    
+    // Otherwise, show as bullet points
+    return (
+      <div key={index} className={`rounded-lg ${colors.container} overflow-hidden mb-4`}>
+        <div className={`px-4 py-3 ${colors.header}`}>
+          {header}
+        </div>
+        <div className="p-4">
+          <ul className="space-y-3">
+            {cleanLines.map((point, pointIndex) => (
+              <li key={pointIndex} className="flex items-start gap-3">
+                <span className={`w-3 h-3 ${colors.bullet} rounded-full mt-1 flex-shrink-0`}></span>
+                <span className={`${colors.text} leading-relaxed`}>{point}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+    );
+  }).filter(Boolean);
+};
+
 const DashboardEnhanced = () => {
-  const { user } = useAuth();
+  const { user, requireAuth } = useAuth();
   const navigate = useNavigate();
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
@@ -62,14 +344,18 @@ const DashboardEnhanced = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [conversationCount, setConversationCount] = useState(0);
 
-  // Fetch dashboard data
-  const fetchDashboardData = async () => {
+  // Fetch dashboard data function
+  const fetchDashboardData = useCallback(async () => {
     try {
       setLoading(true);
       
+      // Validate authentication before fetching data
+      if (!await requireAuth()) {
+        return; // Will redirect to login if not authenticated
+      }
+      
       // Fetch policies
       const policiesResponse = await policyAPI.getPolicies();
-      
       if (policiesResponse?.data?.results) {
         const policiesData = Array.isArray(policiesResponse.data.results) ? policiesResponse.data.results : [];
         setPolicies(policiesData);
@@ -101,7 +387,7 @@ const DashboardEnhanced = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [requireAuth]);
 
   // Filter and search policies
   const filteredPolicies = useMemo(() => {
@@ -155,50 +441,10 @@ const DashboardEnhanced = () => {
 
   // Fetch data from backend
   useEffect(() => {
-    const fetchDashboardData = async () => {
-      try {
-        setLoading(true);
-        
-        // Fetch policies
-        const policiesResponse = await policyAPI.getPolicies();
-        if (policiesResponse?.data?.results) {
-          const policiesData = Array.isArray(policiesResponse.data.results) ? policiesResponse.data.results : [];
-          setPolicies(policiesData);
-          
-          // Calculate total conversation count from policies
-          const totalConversations = policiesData.reduce((total, policy) => {
-            return total + (parseInt(policy.conversation_count) || 0);
-          }, 0);
-          setConversationCount(totalConversations);
-        } else {
-          setPolicies([]);
-          setConversationCount(0);
-        }
-        
-        // Fetch stats
-        try {
-          const statsResponse = await policyAPI.getPolicyStats();
-          setStats(statsResponse?.data || {});
-        } catch (statsError) {
-          console.warn('Could not fetch stats:', statsError);
-          setStats({});
-        }
-        
-      } catch (error) {
-        console.error('Error fetching dashboard data:', error);
-        toast.error('Failed to load dashboard data');
-        setPolicies([]);
-        setConversationCount(0);
-      } finally {
-        setLoading(false);
-      }
-    };
-
     fetchDashboardData();
     
     // Add focus event listener to refresh data when user returns to dashboard
     const handleFocus = () => {
-      console.log('🔄 Dashboard focused, refreshing conversation count...');
       fetchDashboardData();
     };
     
@@ -207,168 +453,66 @@ const DashboardEnhanced = () => {
     return () => {
       window.removeEventListener('focus', handleFocus);
     };
-  }, [user]);
+  }, [user, requireAuth, fetchDashboardData]);
 
-  const handleRefreshDashboard = async () => {
+  // Refresh dashboard data
+  const refreshDashboardData = useCallback(async () => {
+    try {
+      setRefreshing(true);
+      await fetchDashboardData();
+      toast.success('Dashboard refreshed successfully!');
+    } catch (error) {
+      toast.error('Failed to refresh dashboard');
+    } finally {
+      setRefreshing(false);
+    }
+  }, [fetchDashboardData]);
+
+  const handleRefreshDashboard = useCallback(async () => {
     setRefreshing(true);
     try {
       await fetchDashboardData();
       toast.success('Dashboard refreshed!');
     } catch (error) {
-      console.error('Error refreshing dashboard:', error);
       toast.error('Failed to refresh dashboard');
     } finally {
       setRefreshing(false);
     }
-  };
+  }, [fetchDashboardData]);
 
-  // Test API connection
-  const testAPIConnection = async () => {
-    try {
-      console.log('🧪 Testing API connection...');
-      const token = localStorage.getItem('token') || localStorage.getItem('access');
-      console.log('🔑 Token available:', !!token);
-      
-      // Test basic connectivity
-      const response = await fetch(`${process.env.REACT_APP_API_URL || 'http://localhost:8000'}/api/ai/test-endpoint/`, {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Backend connection successful:', data);
-        toast.success('Backend connection successful!');
-        return true;
-      } else {
-        console.error('❌ Backend connection failed:', response.status);
-        toast.error(`Backend connection failed: ${response.status}`);
-        return false;
-      }
-    } catch (error) {
-      console.error('❌ API connection test failed:', error);
-      toast.error('API connection test failed. Check console for details.');
-      return false;
-    }
-  };
-
-  const handleExtractPolicyDetails = async (policyId) => {
+  const handleExtractPolicyDetails = useCallback(async (policyId) => {
     if (!policyId) {
       toast.error('Policy ID is required');
       return;
     }
 
-    console.log('🔍 Starting policy extraction for ID:', policyId);
     setExtracting(true);
     setShowExtractionModal(true);
     
+    // Find the policy object to get provider information
+    const currentPolicy = filteredPolicies.find(p => p.id === policyId);
+    
     try {
-      // Check if user is authenticated
-      const token = localStorage.getItem('token') || localStorage.getItem('access');
-      if (!token) {
-        toast.error('Please log in to analyze policies');
-        return;
-      }
-
-      console.log('🔑 Token available:', !!token);
-      console.log('🚀 Calling AI API for policy extraction...');
-
       const response = await aiAPI.extractPolicyDetails(policyId);
       
-      console.log('📊 AI API Response:', response);
-      console.log('📊 Response data:', response?.data);
-      
-      // The API is returning data directly at the top level, not under response.data
-      if (response && (response.summary || response.coverage || response.mlInsights)) {
-        console.log('✅ Setting extracted details:', response);
-        setExtractedDetails(response);
+      if (response) {
+        // Add policy provider/company information to the response
+        setExtractedDetails({
+          ...response,
+          provider: currentPolicy?.provider || 'Unknown Provider',
+          policy_type: currentPolicy?.policy_type || 'Insurance'
+        });
         toast.success('Policy analysis completed!');
       } else {
-        console.error('❌ No valid data structure found in response:', response);
-        toast.error('Invalid response format from AI analysis');
+        toast.error('Failed to analyze policy');
       }
     } catch (error) {
-      console.error('❌ Error in AI extraction:', error);
-      console.error('❌ Error response:', error.response);
-      console.error('❌ Error status:', error.response?.status);
-      console.error('❌ Error data:', error.response?.data);
-      
-      if (error.response?.status === 401) {
-        toast.error('Authentication failed. Please log in again.');
-      } else if (error.response?.status === 404) {
-        toast.error('Policy not found or access denied.');
-      } else if (error.response?.status === 500) {
-        toast.error('Server error. Please try again later.');
-      } else {
-        toast.error(`Failed to analyze policy: ${error.message || 'Unknown error'}`);
-      }
-      
-      // Fallback to mock data for demonstration
-      console.log('🔄 Using fallback mock data');
-      const mockData = {
-        summary: `Policy analysis for policy ID ${policyId}. This is a comprehensive insurance policy with standard coverage.`,
-        coverage: 'Standard insurance coverage with comprehensive protection',
-        effectiveDate: 'January 1, 2024',
-        expiryDate: 'December 31, 2024',
-        department: 'Insurance',
-        deductible: 'Standard deductible applies',
-        maxOutOfPocket: 'Maximum out-of-pocket expenses as per policy terms',
-        tags: ['Insurance', 'Comprehensive', 'Standard Coverage'],
-        mlInsights: {
-          riskAssessment: 'Low Risk',
-          coverageScore: 85,
-          costEfficiency: 'Good Value',
-          marketComparison: 'Competitive in Market',
-          optimizationTips: [
-            'Consider bundling with other policies',
-            'Review coverage annually',
-            'Maintain good standing for discounts'
-          ]
-        }
-      };
-      setExtractedDetails(mockData);
+      console.error('Error extracting policy details:', error);
+      toast.error('Failed to analyze policy. Please try again.');
     } finally {
       setExtracting(false);
     }
-  };
-
-  // Refresh dashboard data
-  const refreshDashboardData = async () => {
-    try {
-      setRefreshing(true);
-      console.log('🔄 Refreshing dashboard data...');
-      
-      // Fetch policies and stats in parallel
-      const [policiesResponse, statsResponse] = await Promise.all([
-        policyAPI.getPolicies(),
-        policyAPI.getPolicyStats()
-      ]);
-      
-      console.log('📄 Refreshed policies:', policiesResponse?.data);
-      console.log('📊 Refreshed stats:', statsResponse?.data);
-      
-      // Ensure policies is always an array
-      const policiesData = Array.isArray(policiesResponse?.data?.results) ? policiesResponse.data.results : [];
-      setPolicies(policiesData);
-      
-      // Update conversation count
-      const totalConversations = policiesData.reduce((total, policy) => {
-        return total + (parseInt(policy.conversation_count) || 0);
-      }, 0);
-      setConversationCount(totalConversations);
-      
-      setStats(statsResponse?.data || {});
-      
-      toast.success('Dashboard refreshed successfully!');
-    } catch (error) {
-      console.error('❌ Error refreshing dashboard:', error);
-      toast.error('Failed to refresh dashboard');
-    } finally {
-      setRefreshing(false);
-    }
-  };
+  }, [filteredPolicies]);
 
   // Real user data - no mock data
   const userStats = [
@@ -406,7 +550,7 @@ const DashboardEnhanced = () => {
     }
   ];
 
-  const handleFileChange = (e) => {
+  const handleFileChange = useCallback((e) => {
     const file = e.target.files[0];
     if (file) {
       // Validate file type
@@ -425,19 +569,19 @@ const DashboardEnhanced = () => {
       setUploadForm(prev => ({ ...prev, file }));
       toast.success(`File "${file.name}" selected successfully!`);
     }
-  };
+  }, []);
 
-  const handleDragOver = (e) => {
+  const handleDragOver = useCallback((e) => {
     e.preventDefault();
     setDragActive(true);
-  };
+  }, []);
 
-  const handleDragLeave = (e) => {
+  const handleDragLeave = useCallback((e) => {
     e.preventDefault();
     setDragActive(false);
-  };
+  }, []);
 
-  const handleDrop = (e) => {
+  const handleDrop = useCallback((e) => {
     e.preventDefault();
     setDragActive(false);
     
@@ -459,9 +603,9 @@ const DashboardEnhanced = () => {
       setUploadForm(prev => ({ ...prev, file }));
       toast.success(`File "${file.name}" dropped successfully!`);
     }
-  };
+  }, []);
 
-  const handleUpload = async () => {
+  const handleUpload = useCallback(async () => {
     if (!uploadForm.name || !uploadForm.provider || !uploadForm.policy_type || !uploadForm.file) {
       toast.error('Please fill in all fields and select a file');
       return;
@@ -496,15 +640,15 @@ const DashboardEnhanced = () => {
     } finally {
       setUploading(false);
     }
-  };
+  }, [uploadForm, fetchDashboardData]);
 
-  const resetUploadForm = () => {
+  const resetUploadForm = useCallback(() => {
     setUploadForm({ name: '', provider: '', policy_type: '', file: null });
     setShowUploadModal(false);
-  };
+  }, []);
 
   // Add delete policy function
-  const handleDeletePolicy = async (policyId, policyName) => {
+  const handleDeletePolicy = useCallback(async (policyId, policyName) => {
     if (!policyId) {
       toast.error('Policy ID is required');
       return;
@@ -515,10 +659,7 @@ const DashboardEnhanced = () => {
     }
 
     try {
-      console.log('🗑️ Attempting to delete policy:', policyId, policyName);
       const response = await policyAPI.deletePolicy(policyId);
-      
-      console.log('🗑️ Delete response:', response);
       
       if (response.status === 204 || response.status === 200) {
         toast.success(`Policy "${policyName}" deleted successfully!`);
@@ -529,14 +670,9 @@ const DashboardEnhanced = () => {
         // Refresh dashboard data to update stats
         await fetchDashboardData();
       } else {
-        console.error('🗑️ Unexpected response status:', response.status);
         toast.error('Failed to delete policy');
       }
     } catch (error) {
-      console.error('🗑️ Delete error:', error);
-      console.error('🗑️ Error response:', error.response);
-      console.error('🗑️ Error status:', error.response?.status);
-      console.error('🗑️ Error data:', error.response?.data);
       
       if (error.response?.data?.error) {
         toast.error(error.response.data.error);
@@ -550,9 +686,9 @@ const DashboardEnhanced = () => {
         toast.error(`Failed to delete policy: ${error.message || 'Unknown error'}`);
       }
     }
-  };
+  }, [fetchDashboardData]);
 
-  const handleDownloadPolicy = async (policy) => {
+  const handleDownloadPolicy = useCallback(async (policy) => {
     if (!policy.document) {
       toast.error('No document available for download');
       return;
@@ -569,12 +705,11 @@ const DashboardEnhanced = () => {
       
       toast.success('Policy document download started!');
     } catch (error) {
-      console.error('Download error:', error);
       toast.error('Failed to download policy document');
     }
-  };
+  }, []);
 
-  const handleEditPolicy = (policy) => {
+  const handleEditPolicy = useCallback((policy) => {
     setEditForm({
       id: policy.id,
       name: policy.name || '',
@@ -582,9 +717,9 @@ const DashboardEnhanced = () => {
       policy_type: policy.policy_type || ''
     });
     setShowEditModal(true);
-  };
+  }, []);
 
-  const handleUpdatePolicy = async () => {
+  const handleUpdatePolicy = useCallback(async () => {
     if (!editForm.name || !editForm.provider || !editForm.policy_type) {
       toast.error('Please fill in all fields');
       return;
@@ -615,14 +750,13 @@ const DashboardEnhanced = () => {
         await refreshDashboardData();
       }
     } catch (error) {
-      console.error('Update error:', error);
       if (error.response?.data?.error) {
         toast.error(error.response.data.error);
       } else {
         toast.error('Failed to update policy. Please try again.');
       }
     }
-  };
+  }, [editForm, refreshDashboardData]);
 
   // Loading state
   if (loading) {
@@ -734,6 +868,8 @@ const DashboardEnhanced = () => {
             </motion.div>
           ))}
         </div>
+
+        
 
         <div className="space-y-8">
           {/* Main Content */}
@@ -1034,39 +1170,17 @@ const DashboardEnhanced = () => {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.6, delay: 0.4 }}
-              className="bg-gradient-to-br from-accent1-500 to-accent1-600 rounded-2xl p-8 text-white shadow-lg"
+              className="bg-gradient-to-br from-accent1-600 to-accent1-800 rounded-2xl p-8 text-white shadow-lg"
             >
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-2xl font-bold">
-                  Quick Actions
-                </h3>
-                {/* Total Conversations Counter */}
-                <div className="text-right">
-                  <div className="text-sm text-accent1-100 mb-1">Total Conversations</div>
-                  <div className="text-3xl font-bold">
-                    {conversationCount}
-                  </div>
-                </div>
-              </div>
+              <h3 className="text-2xl font-bold mb-6">Quick Actions</h3>
               <div className="space-y-4">
                 <motion.button
-                  whileHover={{ scale: 1.02, x: 5 }}
+                  whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={() => setShowUploadModal(true)}
-                  className="w-full text-left p-4 bg-white/10 rounded-xl hover:bg-white/20 transition-colors duration-200 flex items-center gap-4 border border-white/20"
+                  className="w-full bg-white/20 hover:bg-white/30 text-white font-semibold py-3 px-6 rounded-xl transition-colors duration-200 border border-white/30"
                 >
-                  <Upload size={24} />
-                  <span className="text-lg font-medium">Upload New Policy</span>
-                </motion.button>
-                
-                <motion.button
-                  whileHover={{ scale: 1.02, x: 5 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={() => navigate('/chat')}
-                  className="w-full text-left p-4 bg-white/10 rounded-xl hover:bg-white/20 transition-colors duration-200 flex items-center gap-4 border border-white/20"
-                >
-                  <MessageSquare size={24} />
-                  <span className="text-lg font-medium">Start General Chat</span>
+                  Upload New Policy
                 </motion.button>
               </div>
             </motion.div>
@@ -1286,7 +1400,7 @@ const DashboardEnhanced = () => {
         )}
       </AnimatePresence>
 
-      {/* Policy Details Extraction Modal */}
+      {/* Policy Details Extraction Modal - Sunlit Ocean Theme */}
       <AnimatePresence>
         {showExtractionModal && (
           <motion.div
@@ -1294,27 +1408,32 @@ const DashboardEnhanced = () => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            style={{ zIndex: 9999 }}
           >
             <motion.div
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
               className="bg-white rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden"
+              style={{ zIndex: 10000 }}
             >
               {/* Header */}
-              <div className="flex items-center justify-between p-6 border-b border-primary-200">
+              <div className="flex items-center justify-between p-6 border-b" style={{ borderColor: '#D3D8D1' }}>
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 bg-gradient-to-br from-primary-500 to-accent3-500 rounded-xl flex items-center justify-center">
-                    <Bot size={20} className="text-white" />
+                  <div className="w-10 h-10 rounded-xl flex items-center justify-center" style={{ background: 'linear-gradient(135deg, #E8E5E0, #D3D8D1)' }}>
+                    <Bot size={20} className="text-gray-600" />
                   </div>
-                                      <div>
-                      <h2 className="text-xl font-bold text-gray-800">AI Policy Analysis</h2>
-                      <p className="text-sm text-gray-600">Powered by Gemini 2.5 Flash</p>
-                    </div>
+                  <div>
+                    <h2 className="text-xl font-bold text-gray-800">AI Policy Analysis</h2>
+                    <p className="text-sm text-gray-600">Powered by Gemini 2.5 Flash</p>
+                  </div>
                 </div>
                 <button
                   onClick={() => setShowExtractionModal(false)}
-                  className="p-2 text-gray-500 hover:text-gray-800 hover:bg-primary-50 rounded-lg transition-colors duration-200"
+                  className="p-2 text-gray-500 hover:text-gray-800 rounded-lg transition-colors duration-200" 
+                  style={{ '&:hover': { backgroundColor: '#F5F3F0' } }}
+                  onMouseEnter={(e) => e.target.style.backgroundColor = '#F5F3F0'}
+                  onMouseLeave={(e) => e.target.style.backgroundColor = 'transparent'}
                 >
                   <X size={20} />
                 </button>
@@ -1322,24 +1441,54 @@ const DashboardEnhanced = () => {
 
               {/* Content */}
               <div className="p-6 overflow-y-auto max-h-[calc(90vh-120px)]">
-                {/* Helpful Message */}
-                {!extractedDetails || (extractedDetails.extraction_confidence && extractedDetails.extraction_confidence < 0.8) ? (
+                {/* Helpful Message - Only show when no data */}
+                {!extractedDetails ? (
                   <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
                     <div className="flex items-start gap-3">
-                      <div className="w-6 h-6 bg-blue-500 rounded-full flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <span className="text-white text-sm font-bold">ℹ️</span>
+                      <div className="absolute inset-0" style={{
+                        background: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.3"%3E%3Ccircle cx="30" cy="30" r="4"/%3E%3C/g%3E%3C/g%3E%3C/svg%3E") repeat'
+                      }} />
+                    </div>
+                    <div className="relative flex items-start gap-4">
+                      <div 
+                        className="w-12 h-12 rounded-2xl flex items-center justify-center flex-shrink-0"
+                        style={{ 
+                          background: 'linear-gradient(135deg, #3b82f6, #1d4ed8)',
+                          boxShadow: '0 8px 16px rgba(59, 130, 246, 0.3)'
+                        }}
+                      >
+                        <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
                       </div>
                       <div>
-                        <h4 className="text-sm font-semibold text-blue-800 mb-1">Getting Better Results</h4>
-                        <p className="text-sm text-blue-700">
-                          For more accurate analysis, ensure your policy document:
+                        <h4 className="text-lg font-bold text-blue-900 mb-2">Getting Better Results</h4>
+                        <p className="text-blue-800 mb-4 leading-relaxed">
+                          For more accurate AI analysis, ensure your policy document meets these requirements:
                         </p>
-                        <ul className="text-sm text-blue-700 mt-2 space-y-1">
-                          <li>• Contains clear, readable text (not just images)</li>
-                          <li>• Includes policy dates, coverage amounts, and terms</li>
-                          <li>• Is in PDF, DOCX, or DOC format</li>
-                          <li>• Has been properly uploaded and processed</li>
-                        </ul>
+                        <div className="grid gap-3">
+                          {[
+                            'Contains clear, readable text (not just images)',
+                            'Includes policy dates, coverage amounts, and terms',
+                            'Is in PDF, DOCX, or DOC format',
+                            'Has been properly uploaded and processed'
+                          ].map((item, index) => (
+                            <motion.div 
+                              key={index}
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: 0.1 * index }}
+                              className="flex items-center gap-3"
+                            >
+                              <div className="w-6 h-6 rounded-full bg-blue-600 flex items-center justify-center flex-shrink-0">
+                                <svg className="w-3 h-3 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                                </svg>
+                              </div>
+                              <span className="text-blue-800 font-medium">{item}</span>
+                            </motion.div>
+                          ))}
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -1347,116 +1496,278 @@ const DashboardEnhanced = () => {
                 
                 {extracting ? (
                   <div className="text-center py-12">
-                    <div className="w-16 h-16 border-4 border-primary-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                                         <p className="text-gray-600">Gemini 2.5 Flash is analyzing your policy document...</p>
+                    <div className="w-16 h-16 border-4 rounded-full animate-spin mx-auto mb-4" style={{ borderColor: '#E8E5E0', borderTopColor: 'transparent' }}></div>
+                    <p className="text-gray-600">Gemini 2.5 Flash is analyzing your policy document...</p>
                   </div>
                 ) : extractedDetails ? (
-                  <div className="space-y-6">
-                    {/* Summary */}
-                    <div className="bg-gradient-to-br from-primary-50 to-accent1-100 p-6 rounded-xl border border-primary-200">
-                      <h3 className="text-lg font-semibold text-gray-800 mb-3 flex items-center gap-2">
-                        <FileTextIcon size={20} className="text-primary-500" />
-                        Policy Summary
-                      </h3>
-                      
-                      {/* Handle new nested summary structure */}
-                      {extractedDetails.summary && typeof extractedDetails.summary === 'object' ? (
-                        <div className="space-y-4">
-                          {/* Overview */}
-                          {extractedDetails.summary.overview && (
-                            <div>
-                              <h4 className="font-medium text-gray-800 mb-2">Overview</h4>
-                              <p className="text-gray-600 leading-relaxed">
-                                {extractedDetails.summary.overview}
-                              </p>
-                            </div>
-                          )}
-                                                  
-                          {/* Key Points */}
-                          {extractedDetails.summary.points && Array.isArray(extractedDetails.summary.points) && (
-                            <div>
-                              <h4 className="font-medium text-gray-800 mb-2">Key Points</h4>
-                              <ul className="space-y-2">
-                                {extractedDetails.summary.points.map((point, index) => (
-                                  <li key={index} className="flex items-start gap-2">
-                                    <span className="w-2 h-2 bg-primary-500 rounded-full mt-2 flex-shrink-0"></span>
-                                    <span className="text-gray-600">{point}</span>
-                                  </li>
-                                ))}
-                              </ul>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        /* Handle old flat summary structure for backward compatibility */
-                        <p className="text-gray-600 leading-relaxed">
-                          {extractedDetails.summary || 'Policy analysis summary will be generated here. Please ensure your policy document is properly uploaded and contains readable text.'}
-                        </p>
-                      )}
-                    </div>
-
-                    {/* ML Insights */}
-                    {extractedDetails.mlInsights && (
-                      <div className="bg-white p-6 rounded-xl border border-primary-200">
-                        <h3 className="text-lg font-semibold text-gray-800 mb-4 flex items-center gap-2">
-                          <Brain size={20} className="text-primary-500" />
-                          AI Insights
-                        </h3>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                          <div className="space-y-3">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-medium text-gray-600">Risk Assessment:</span>
-                              <span className={`px-2 py-1 rounded-full text-xs font-semibold ${
-                                extractedDetails.mlInsights?.riskAssessment === 'Low' ? 'bg-green-100 text-green-700' :
-                                extractedDetails.mlInsights?.riskAssessment === 'Medium' ? 'bg-yellow-100 text-yellow-700' :
-                                extractedDetails.mlInsights?.riskAssessment === 'High' ? 'bg-red-100 text-red-700' :
-                                'bg-gray-100 text-gray-700'
-                              }`}>
-                                {extractedDetails.mlInsights?.riskAssessment || 'Analysis pending'}
-                              </span>
-                            </div>
-                            
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-medium text-gray-600">Coverage Score:</span>
-                              <span className="text-gray-800 font-semibold">
-                                {extractedDetails.mlInsights?.coverageScore || '--'}/100
-                              </span>
-                            </div>
-                            
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-medium text-gray-600">Cost Efficiency:</span>
-                              <span className="text-gray-800 font-semibold">
-                                {extractedDetails.mlInsights?.costEfficiency || 'Analysis pending'}
-                              </span>
-                            </div>
-                          </div>
-                          
-                          <div className="space-y-3">
-                            <div className="flex justify-between items-center">
-                              <span className="text-sm font-medium text-gray-600">Market Comparison:</span>
-                              <span className="text-gray-800 font-semibold">
-                                {extractedDetails.mlInsights?.marketComparison || 'Analysis pending'}
-                              </span>
-                            </div>
-                            
-                            <div>
-                              <span className="text-sm font-medium text-gray-600 block mb-2">Optimization Tips:</span>
-                              <ul className="space-y-1">
-                                {extractedDetails.mlInsights?.optimizationTips && extractedDetails.mlInsights.optimizationTips.length > 0 ? (
-                                  extractedDetails.mlInsights.optimizationTips.map((tip, index) => (
-                                    <li key={index} className="text-sm text-gray-800 flex items-start gap-2">
-                                      <span className="w-1.5 h-1.5 bg-accent1-500 rounded-full mt-2 flex-shrink-0"></span>
-                                      {tip}
-                                    </li>
-                                  ))
-                                ) : (
-                                  <li className="text-sm text-gray-500">AI analysis will generate personalized tips based on your policy content</li>
-                                )}
-                              </ul>
-                            </div>
-                          </div>
-                        </div>
+                  <motion.div 
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="space-y-8"
+                  >
+                    
+                    {/* Policy Name - Ocean Header */}
+                    <motion.div 
+                      initial={{ opacity: 0, y: -20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      className="text-center py-8 relative overflow-hidden rounded-2xl"
+                      style={{ 
+                        background: 'linear-gradient(135deg, #e0f2fe 0%, #b3e5fc 50%, #81d4fa 100%)',
+                        border: '1px solid rgba(3, 169, 244, 0.2)'
+                      }}
+                    >
+                      <div className="absolute inset-0 opacity-20">
+                        <div className="absolute inset-0" style={{
+                          background: 'url("data:image/svg+xml,%3Csvg width="40" height="40" viewBox="0 0 40 40" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="%23ffffff" fill-opacity="0.4"%3E%3Cpath d="M20 20c0-5.5-4.5-10-10-10s-10 4.5-10 10 4.5 10 10 10 10-4.5 10-10zm10 0c0-5.5-4.5-10-10-10s-10 4.5-10 10 4.5 10 10 10 10-4.5 10-10z"/%3E%3C/g%3E%3C/svg%3E") repeat'
+                        }} />
                       </div>
+                      <div className="relative">
+                        <motion.h2 
+                          initial={{ opacity: 0, scale: 0.9 }}
+                          animate={{ opacity: 1, scale: 1 }}
+                          transition={{ delay: 0.2 }}
+                          className="text-3xl font-bold text-blue-900 mb-4"
+                        >
+                          {extractedDetails.name || 'Policy Analysis'}
+                        </motion.h2>
+                        {extractedDetails.provider && (
+                          <motion.div 
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.3 }}
+                            className="mb-4 flex flex-wrap justify-center gap-3"
+                          >
+                            <span 
+                              className="inline-flex items-center px-6 py-3 rounded-full text-sm font-semibold backdrop-blur-sm"
+                              style={{ 
+                                background: 'linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(240, 249, 255, 0.9))',
+                                color: '#0369a1',
+                                border: '1px solid rgba(3, 105, 161, 0.3)',
+                                boxShadow: '0 4px 12px rgba(3, 105, 161, 0.1)'
+                              }}
+                            >
+                              <svg className="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 21V5a2 2 0 00-2-2H7a2 2 0 00-2 2v16m14 0h2m-2 0h-5m-9 0H3m2 0h5M9 7h1m-1 4h1m4-4h1m-1 4h1m-5 10v-5a1 1 0 011-1h2a1 1 0 011 1v5m-4 0h4" />
+                              </svg>
+                              {extractedDetails.provider}
+                            </span>
+                            {extractedDetails.policy_type && (
+                              <span 
+                                className="inline-flex items-center px-6 py-3 rounded-full text-sm font-semibold backdrop-blur-sm"
+                                style={{ 
+                                  background: 'linear-gradient(135deg, rgba(191, 219, 254, 0.9), rgba(147, 197, 253, 0.9))',
+                                  color: '#1e40af',
+                                  border: '1px solid rgba(30, 64, 175, 0.3)',
+                                  boxShadow: '0 4px 12px rgba(30, 64, 175, 0.1)'
+                                }}
+                              >
+                                <Shield size={16} className="mr-2" />
+                                {extractedDetails.policy_type}
+                              </span>
+                            )}
+                          </motion.div>
+                        )}
+                        <motion.p 
+                          initial={{ opacity: 0 }}
+                          animate={{ opacity: 1 }}
+                          transition={{ delay: 0.4 }}
+                          className="text-blue-700 text-base font-medium"
+                        >
+                          🌊 AI-Powered Ocean Analysis
+                        </motion.p>
+                      </div>
+                    </motion.div>
+                    
+                    {/* Summary - Ocean Theme */}
+                    <motion.div 
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.2 }}
+                      className="relative overflow-hidden rounded-2xl"
+                      style={{ 
+                        background: 'linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 50%, #bae6fd 100%)',
+                        border: '1px solid rgba(14, 165, 233, 0.2)',
+                        boxShadow: '0 10px 25px -5px rgba(14, 165, 233, 0.1)'
+                      }}
+                    >
+                      <div className="absolute inset-0 opacity-10">
+                        <div className="absolute inset-0" style={{
+                          background: 'url("data:image/svg+xml,%3Csvg width="60" height="60" viewBox="0 0 60 60" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="none" fill-rule="evenodd"%3E%3Cg fill="%23ffffff" fill-opacity="0.6"%3E%3Cpath d="M30 30c0-8.3-6.7-15-15-15s-15 6.7-15 15 6.7 15 15 15 15-6.7 15-15zm15 0c0-8.3-6.7-15-15-15s-15 6.7-15 15 6.7 15 15 15 15-6.7 15-15z"/%3E%3C/g%3E%3C/svg%3E") repeat'
+                        }} />
+                      </div>
+                      
+                      <div className="relative p-8">
+                        <div className="flex items-center gap-3 mb-6">
+                          <div 
+                            className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                            style={{ 
+                              background: 'linear-gradient(135deg, #0ea5e9, #0284c7)',
+                              boxShadow: '0 8px 16px rgba(14, 165, 233, 0.3)'
+                            }}
+                          >
+                            <FileTextIcon size={24} className="text-white" />
+                          </div>
+                          <div>
+                            <h3 className="text-2xl font-bold text-blue-900">Policy Summary</h3>
+                            <p className="text-blue-700 text-sm">Deep dive analysis results</p>
+                          </div>
+                        </div>
+                        
+                        {/* Format and display the summary text */}
+                        {extractedDetails.summary ? (
+                          <motion.div 
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.4 }}
+                            className="space-y-4"
+                          >
+                            {formatPolicySummary(extractedDetails.summary)}
+                          </motion.div>
+                        ) : (
+                          <motion.div
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ delay: 0.4 }}
+                            className="bg-white/60 backdrop-blur-sm rounded-xl p-6"
+                            style={{ border: '1px solid rgba(14, 165, 233, 0.2)' }}
+                          >
+                            <p className="text-blue-800 leading-relaxed">
+                              🌊 Policy analysis summary will be generated here. Please ensure your policy document is properly uploaded and contains readable text.
+                            </p>
+                          </motion.div>
+                        )}
+                      </div>
+                    </motion.div>
+
+                    {/* ML Insights - Ocean Theme */}
+                    {extractedDetails.mlInsights && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 20 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ delay: 0.3 }}
+                        className="relative overflow-hidden rounded-2xl"
+                        style={{ 
+                          background: 'linear-gradient(135deg, #ecfeff 0%, #cffafe 50%, #a5f3fc 100%)',
+                          border: '1px solid rgba(6, 182, 212, 0.2)',
+                          boxShadow: '0 10px 25px -5px rgba(6, 182, 212, 0.1)'
+                        }}
+                      >
+                        <div className="absolute inset-0 opacity-10">
+                          <div className="absolute inset-0" style={{
+                            background: 'url("data:image/svg+xml,%3Csvg width="50" height="50" viewBox="0 0 50 50" xmlns="http://www.w3.org/2000/svg"%3E%3Cg fill="%23ffffff" fill-opacity="0.5"%3E%3Cpath d="M25 25c0-6.9-5.6-12.5-12.5-12.5S0 18.1 0 25s5.6 12.5 12.5 12.5S25 31.9 25 25zm12.5 0c0-6.9-5.6-12.5-12.5-12.5S12.5 18.1 12.5 25s5.6 12.5 12.5 12.5S37.5 31.9 37.5 25z"/%3E%3C/g%3E%3C/svg%3E") repeat'
+                          }} />
+                        </div>
+                        
+                        <div className="relative p-8">
+                          <div className="flex items-center gap-3 mb-6">
+                            <div 
+                              className="w-12 h-12 rounded-2xl flex items-center justify-center"
+                              style={{ 
+                                background: 'linear-gradient(135deg, #06b6d4, #0891b2)',
+                                boxShadow: '0 8px 16px rgba(6, 182, 212, 0.3)'
+                              }}
+                            >
+                              <Brain size={24} className="text-white" />
+                            </div>
+                            <div>
+                              <h3 className="text-2xl font-bold text-cyan-900">AI Insights</h3>
+                              <p className="text-cyan-700 text-sm">Machine learning analysis</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <motion.div 
+                              initial={{ opacity: 0, x: -20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: 0.4 }}
+                              className="space-y-4"
+                            >
+                              <div className="bg-white/70 backdrop-blur-sm rounded-xl p-4" style={{ border: '1px solid rgba(6, 182, 212, 0.2)' }}>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm font-semibold text-cyan-800">Risk Assessment:</span>
+                                  <span className={`px-3 py-2 rounded-full text-xs font-bold ${
+                                    extractedDetails.mlInsights?.riskAssessment === 'Low' ? 'text-emerald-800' :
+                                    extractedDetails.mlInsights?.riskAssessment === 'Medium' ? 'text-amber-800' :
+                                    extractedDetails.mlInsights?.riskAssessment === 'High' ? 'text-rose-800' :
+                                    'text-cyan-700'
+                                  }`}
+                                  style={{
+                                    background: extractedDetails.mlInsights?.riskAssessment === 'Low' ? 'linear-gradient(135deg, #d1fae5, #a7f3d0)' :
+                                    extractedDetails.mlInsights?.riskAssessment === 'Medium' ? 'linear-gradient(135deg, #fef3c7, #fde68a)' :
+                                    extractedDetails.mlInsights?.riskAssessment === 'High' ? 'linear-gradient(135deg, #fecaca, #f87171)' :
+                                    'linear-gradient(135deg, #cffafe, #a5f3fc)'
+                                  }}>
+                                    {extractedDetails.mlInsights?.riskAssessment || 'Analysis pending'}
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              <div className="bg-white/70 backdrop-blur-sm rounded-xl p-4" style={{ border: '1px solid rgba(6, 182, 212, 0.2)' }}>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm font-semibold text-cyan-800">Coverage Score:</span>
+                                  <div className="flex items-center gap-2">
+                                    <div className="w-16 h-2 bg-cyan-100 rounded-full overflow-hidden">
+                                      <div 
+                                        className="h-full bg-gradient-to-r from-cyan-400 to-cyan-600 rounded-full transition-all duration-1000"
+                                        style={{ width: `${extractedDetails.mlInsights?.coverageScore || 0}%` }}
+                                      />
+                                    </div>
+                                    <span className="text-cyan-900 font-bold text-sm">
+                                      {extractedDetails.mlInsights?.coverageScore || '--'}/100
+                                    </span>
+                                  </div>
+                                </div>
+                              </div>
+                              
+                              <div className="bg-white/70 backdrop-blur-sm rounded-xl p-4" style={{ border: '1px solid rgba(6, 182, 212, 0.2)' }}>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm font-semibold text-cyan-800">Cost Efficiency:</span>
+                                  <span className="text-cyan-900 font-bold">
+                                    {extractedDetails.mlInsights?.costEfficiency || 'Analysis pending'}
+                                  </span>
+                                </div>
+                              </div>
+                            </motion.div>
+                            
+                            <motion.div 
+                              initial={{ opacity: 0, x: 20 }}
+                              animate={{ opacity: 1, x: 0 }}
+                              transition={{ delay: 0.5 }}
+                              className="space-y-4"
+                            >
+                              <div className="bg-white/70 backdrop-blur-sm rounded-xl p-4" style={{ border: '1px solid rgba(6, 182, 212, 0.2)' }}>
+                                <div className="flex justify-between items-center">
+                                  <span className="text-sm font-semibold text-cyan-800">Market Comparison:</span>
+                                  <span className="text-cyan-900 font-bold">
+                                    {extractedDetails.mlInsights?.marketComparison || 'Analysis pending'}
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              <div className="bg-white/70 backdrop-blur-sm rounded-xl p-4" style={{ border: '1px solid rgba(6, 182, 212, 0.2)' }}>
+                                <span className="text-sm font-semibold text-cyan-800 block mb-3">🌊 Optimization Tips:</span>
+                                <ul className="space-y-2">
+                                  {extractedDetails.mlInsights?.optimizationTips && extractedDetails.mlInsights.optimizationTips.length > 0 ? (
+                                    extractedDetails.mlInsights.optimizationTips.map((tip, index) => (
+                                      <motion.li 
+                                        key={index} 
+                                        initial={{ opacity: 0, x: -10 }}
+                                        animate={{ opacity: 1, x: 0 }}
+                                        transition={{ delay: 0.6 + (index * 0.1) }}
+                                        className="text-sm text-cyan-800 flex items-start gap-2"
+                                      >
+                                        <span className="w-2 h-2 bg-cyan-500 rounded-full mt-2 flex-shrink-0"></span>
+                                        {tip}
+                                      </motion.li>
+                                    ))
+                                  ) : (
+                                    <li className="text-sm text-cyan-600">AI analysis will generate personalized tips based on your policy content</li>
+                                  )}
+                                </ul>
+                              </div>
+                            </motion.div>
+                          </div>
+                        </div>
+                      </motion.div>
                     )}
 
                     {/* Tags */}
@@ -1505,6 +1816,80 @@ const DashboardEnhanced = () => {
                               return;
                             }
 
+                            // Create formatted HTML with categorized sections like the UI
+                            const formatPDFSummary = (summaryText) => {
+                              if (!summaryText || typeof summaryText !== 'string') {
+                                return '<p>No summary available</p>';
+                              }
+
+                              // Clean the text from any formatting symbols and remove introductory text
+                              const cleanText = summaryText
+                                .replace(/[•◦▪▫★☆♦◆■□▲△▼▽]/g, '')
+                                .replace(/^\s*[\*\-\+\•]\s*/gm, '')
+                                .replace(/#{1,6}\s*/g, '')
+                                .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
+                                .replace(/^\s*[\*\-\+]\s*/gm, '')
+                                .replace(/^Here's a comprehensive and detailed analysis of the .* policy document:\s*/i, '') // Remove intro text
+                                .replace(/^.*comprehensive.*analysis.*document:\s*/i, '') // Remove any variation of intro text
+                                .trim();
+
+                              // Split into sections
+                              const sections = cleanText.split(/(?=^[A-Z][A-Z\s:]+:?$|^[A-Z][a-z]+(?:\s+[A-Z][a-z]*)*:?$)/m);
+                              
+                              return sections.map(section => {
+                                if (!section.trim()) return '';
+                                
+                                const lines = section.trim().split('\n');
+                                const header = lines[0].trim();
+                                const content = lines.slice(1).filter(line => line.trim()).join('\n');
+                                
+                                if (!content) return '';
+
+                                // Get colors for different categories
+                                const getCategoryColor = (headerText) => {
+                                  const text = headerText.toUpperCase();
+                                  if (text.includes('SUMMARY') || text.includes('OVERVIEW')) return { bg: '#dbeafe', border: '#bfdbfe', text: '#1e40af' };
+                                  if (text.includes('COVERAGE') || text.includes('DETAILS')) return { bg: '#dcfce7', border: '#bbf7d0', text: '#166534' };
+                                  if (text.includes('KEY DATES') || text.includes('DATES')) return { bg: '#f3e8ff', border: '#e9d5ff', text: '#7c3aed' };
+                                  if (text.includes('FINANCIAL') || text.includes('TERMS')) return { bg: '#fed7aa', border: '#fdba74', text: '#ea580c' };
+                                  if (text.includes('POLICY TYPE') || text.includes('PROVIDER')) return { bg: '#e0e7ff', border: '#c7d2fe', text: '#4338ca' };
+                                  if (text.includes('RISK') || text.includes('ASSESSMENT')) return { bg: '#fecaca', border: '#fca5a5', text: '#dc2626' };
+                                  if (text.includes('TIPS') || text.includes('OPTIMIZATION')) return { bg: '#fef3c7', border: '#fde68a', text: '#d97706' };
+                                  if (text.includes('MARKET') || text.includes('COMPARISON')) return { bg: '#ccfbf1', border: '#99f6e4', text: '#0f766e' };
+                                  if (text.includes('CLAIM') || text.includes('TIMELINES')) return { bg: '#fce7f3', border: '#fbcfe8', text: '#be185d' };
+                                  if (text.includes('HOSPITALIZATION') || text.includes('PLANNED')) return { bg: '#cffafe', border: '#a5f3fc', text: '#0891b2' };
+                                  if (text.includes('EMERGENCY') || text.includes('URGENT')) return { bg: '#ffe4e6', border: '#fecdd3', text: '#e11d48' };
+                                  if (text.includes('WAITING') || text.includes('PERIODS')) return { bg: '#fef9c3', border: '#fef08a', text: '#ca8a04' };
+                                  return { bg: '#f1f5f9', border: '#e2e8f0', text: '#475569' };
+                                };
+
+                                const colors = getCategoryColor(header);
+                                const contentLines = content.split('\n').filter(line => line.trim());
+                                const cleanLines = contentLines.map(line => line.replace(/^[\s\*\-\+\•◦▪▫★☆♦◆■□▲△▼▽]+/, '').trim());
+
+                                return `
+                                  <div style="border: 1px solid ${colors.border}; background: ${colors.bg}; border-radius: 8px; margin-bottom: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                                    <div style="background: ${colors.border}; color: ${colors.text}; font-weight: 600; font-size: 16px; padding: 12px 16px;">
+                                      ${header}
+                                    </div>
+                                    <div style="padding: 16px;">
+                                      ${cleanLines.length <= 2 && !cleanLines.some(line => line.length < 100) ? 
+                                        `<p style="color: ${colors.text}; line-height: 1.6; margin: 0;">${content}</p>` :
+                                        `<ul style="list-style: none; padding: 0; margin: 0;">
+                                          ${cleanLines.map(point => `
+                                            <li style="margin: 8px 0; padding-left: 20px; position: relative; color: ${colors.text}; line-height: 1.5;">
+                                              <span style="position: absolute; left: 0; color: ${colors.text}; font-weight: bold;">•</span>
+                                              ${point}
+                                            </li>
+                                          `).join('')}
+                                        </ul>`
+                                      }
+                                    </div>
+                                  </div>
+                                `;
+                              }).filter(Boolean).join('');
+                            };
+
                             const summaryContent = `
                               <!DOCTYPE html>
                               <html>
@@ -1512,93 +1897,101 @@ const DashboardEnhanced = () => {
                                 <meta charset="utf-8">
                                 <title>PolicyBridge AI - Policy Analysis Summary</title>
                                 <style>
-                                  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: #f8fafc; }
+                                  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; padding: 20px; background: #f8fafc; line-height: 1.6; }
                                   .container { max-width: 800px; margin: 0 auto; background: white; padding: 40px; border-radius: 16px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); }
                                   .header { text-align: center; margin-bottom: 40px; padding-bottom: 20px; border-bottom: 2px solid #e5e7eb; }
                                   .logo { font-size: 28px; font-weight: bold; color: #f59e0b; margin-bottom: 8px; }
                                   .subtitle { color: #6b7280; font-size: 16px; }
-                                  .section { margin-bottom: 30px; }
-                                  .section-title { font-size: 20px; font-weight: 600; color: #1f2937; margin-bottom: 15px; padding: 12px 16px; background: #f3f4f6; border-radius: 8px; border-left: 4px solid #f59e0b; }
-                                  .summary-box { background: #f0f9ff; border: 1px solid #0ea5e9; border-radius: 8px; padding: 20px; line-height: 1.6; color: #0c4a6e; }
-                                  .insights-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin: 20px 0; }
-                                  .insight-item { background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px; padding: 16px; }
-                                  .insight-label { font-weight: 500; color: #92400e; margin-bottom: 8px; }
-                                  .insight-value { font-size: 18px; font-weight: 600; color: #78350f; }
-                                  .tips-list { background: #f0fdf4; border: 1px solid #22c55e; border-radius: 8px; padding: 16px; }
-                                  .tip-item { margin: 8px 0; padding-left: 20px; position: relative; }
-                                  .tip-item:before { content: "•"; color: #22c55e; font-weight: bold; position: absolute; left: 0; }
-                                  .tags-container { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
-                                  .tag { background: #f3f4f6; color: #374151; padding: 6px 12px; border-radius: 16px; font-size: 12px; font-weight: 500; }
+                                  .policy-info { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-bottom: 24px; text-align: center; }
                                   .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid #e5e7eb; color: #6b7280; font-size: 14px; }
+                                  .insights-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin: 24px 0; }
+                                  .insight-item { background: #fef3c7; border: 1px solid #fde68a; border-radius: 8px; padding: 16px; text-align: center; }
+                                  .insight-label { font-weight: 500; color: #92400e; margin-bottom: 8px; font-size: 14px; }
+                                  .insight-value { font-size: 18px; font-weight: 600; color: #78350f; }
                                 </style>
                               </head>
                               <body>
                                 <div class="container">
                                   <div class="header">
                                     <div class="logo">PolicyBridge AI</div>
-                                    <div class="subtitle">Policy Analysis Summary</div>
+                                    <div class="subtitle">Policy Analysis Summary Report</div>
                                     <div style="color: #6b7280; margin-top: 8px;">Generated on: ${new Date().toLocaleDateString()}</div>
                                   </div>
-                                  <div class="section">
-                                    <div class="section-title">🤖 AI Analysis Summary</div>
-                                    <div class="summary-box">
-                                      ${(() => {
-                                        if (extractedDetails.summary && typeof extractedDetails.summary === 'object') {
-                                          let summaryHtml = '';
-                                          if (extractedDetails.summary.overview) {
-                                            summaryHtml += `<div style="margin-bottom: 16px;"><strong>Overview:</strong><br>${extractedDetails.summary.overview}</div>`;
-                                          }
-                                          if (extractedDetails.summary.points && Array.isArray(extractedDetails.summary.points)) {
-                                            summaryHtml += `<div><strong>Key Points:</strong><br>`;
-                                            extractedDetails.summary.points.forEach((point, index) => {
-                                              summaryHtml += `<div style="margin: 8px 0; padding-left: 20px; position: relative;">
-                                                <span style="position: absolute; left: 0; color: #0ea5e9;">•</span>${point}
-                                              </div>`;
-                                            });
-                                            summaryHtml += '</div>';
-                                          }
-                                          return summaryHtml || 'No summary available';
-                                        } else {
-                                          return extractedDetails.summary || 'No summary available';
-                                        }
-                                      })()}
-                                    </div>
+                                  
+                                  <div class="policy-info">
+                                    <h2 style="margin: 0 0 12px 0; color: #1f2937; font-size: 24px; font-weight: bold;">${extractedDetails.name || 'Policy Analysis'}</h2>
+                                    ${extractedDetails.provider ? `
+                                      <div style="margin: 8px 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px;">
+                                        <span style="display: inline-flex; align-items: center; padding: 4px 12px; background-color: #F5F3F0; color: #374151; border: 1px solid #D3D8D1; border-radius: 20px; font-size: 12px; font-weight: 500;">
+                                          ${extractedDetails.provider}
+                                        </span>
+                                        ${extractedDetails.policy_type ? `
+                                          <span style="display: inline-flex; align-items: center; padding: 4px 12px; background-color: #E8E5E0; color: #374151; border: 1px solid #D3D8D1; border-radius: 20px; font-size: 12px; font-weight: 500;">
+                                            ${extractedDetails.policy_type}
+                                          </span>
+                                        ` : ''}
+                                      </div>
+                                    ` : ''}
+                                    <p style="margin: 0; color: #6b7280; font-size: 14px;">AI-Powered Policy Analysis Report</p>
+                                  </div>
+
+                                  <div style="margin-bottom: 32px;">
+                                    ${formatPDFSummary(extractedDetails.summary)}
                                   </div>
                                   ${extractedDetails.mlInsights ? `
-                                  <div class="section">
-                                    <div class="section-title">🧠 AI Insights</div>
-                                    <div class="insights-grid">
-                                      <div class="insight-item">
-                                        <div class="insight-label">Risk Assessment</div>
-                                        <div class="insight-value">${extractedDetails.mlInsights?.riskAssessment || 'Analysis pending'}</div>
-                                      </div>
-                                      <div class="insight-item">
-                                        <div class="insight-label">Coverage Score</div>
-                                        <div class="insight-value">${extractedDetails.mlInsights?.coverageScore || '--'}/100</div>
-                                      </div>
-                                      <div class="insight-item">
-                                        <div class="insight-label">Cost Efficiency</div>
-                                        <div class="insight-value">${extractedDetails.mlInsights?.costEfficiency || 'Analysis pending'}</div>
-                                      </div>
-                                      <div class="insight-item">
-                                        <div class="insight-label">Market Comparison</div>
-                                        <div class="insight-value">${extractedDetails.mlInsights?.marketComparison || 'Analysis pending'}</div>
-                                      </div>
+                                  <div style="border: 1px solid #fde68a; background: #fef3c7; border-radius: 8px; margin-bottom: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                                    <div style="background: #fde68a; color: #d97706; font-weight: 600; font-size: 16px; padding: 12px 16px;">
+                                      🧠 AI Insights
                                     </div>
-                                    <div class="tips-list">
-                                      <div style="font-weight: 600; color: #166534; margin-bottom: 12px;">💡 Optimization Tips:</div>
-                                      ${extractedDetails.mlInsights?.optimizationTips && extractedDetails.mlInsights.optimizationTips.length > 0 ? 
-                                        extractedDetails.mlInsights.optimizationTips.map((tip, index) => `<div class="tip-item">${index + 1}. ${tip}</div>`).join('') : 
-                                        '<div class="tip-item">No optimization tips available</div>'
-                                      }
+                                    <div style="padding: 16px;">
+                                      <div class="insights-grid">
+                                        <div class="insight-item">
+                                          <div class="insight-label">Risk Assessment</div>
+                                          <div class="insight-value">${extractedDetails.mlInsights?.riskAssessment || 'Analysis pending'}</div>
+                                        </div>
+                                        <div class="insight-item">
+                                          <div class="insight-label">Coverage Score</div>
+                                          <div class="insight-value">${extractedDetails.mlInsights?.coverageScore || '--'}/100</div>
+                                        </div>
+                                        <div class="insight-item">
+                                          <div class="insight-label">Cost Efficiency</div>
+                                          <div class="insight-value">${extractedDetails.mlInsights?.costEfficiency || 'Analysis pending'}</div>
+                                        </div>
+                                        <div class="insight-item">
+                                          <div class="insight-label">Market Comparison</div>
+                                          <div class="insight-value">${extractedDetails.mlInsights?.marketComparison || 'Analysis pending'}</div>
+                                        </div>
+                                      </div>
+                                      
+                                      <div style="background: #dcfce7; border: 1px solid #bbf7d0; border-radius: 8px; padding: 16px; margin-top: 16px;">
+                                        <div style="font-weight: 600; color: #166534; margin-bottom: 12px;">💡 Optimization Tips:</div>
+                                        ${extractedDetails.mlInsights?.optimizationTips && extractedDetails.mlInsights.optimizationTips.length > 0 ? 
+                                          extractedDetails.mlInsights.optimizationTips.map((tip, index) => `
+                                            <div style="margin: 8px 0; padding-left: 20px; position: relative; color: #166534; line-height: 1.5;">
+                                              <span style="position: absolute; left: 0; color: #22c55e; font-weight: bold;">•</span>
+                                              ${tip}
+                                            </div>
+                                          `).join('') : 
+                                          '<div style="color: #166534;">No optimization tips available</div>'
+                                        }
+                                      </div>
                                     </div>
                                   </div>
                                   ` : ''}
+                                  
                                   ${extractedDetails.tags && extractedDetails.tags.length > 0 ? `
-                                  <div class="section">
-                                    <div class="section-title">🏷️ Tags</div>
-                                    <div class="tags-container">
-                                      ${extractedDetails.tags.map((tag, index) => `<span class="tag">${tag || 'Unknown'}</span>`).join('')}
+                                  <div style="border: 1px solid #e2e8f0; background: #f1f5f9; border-radius: 8px; margin-bottom: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
+                                    <div style="background: #e2e8f0; color: #475569; font-weight: 600; font-size: 16px; padding: 12px 16px;">
+                                      🏷️ Policy Tags
+                                    </div>
+                                    <div style="padding: 16px;">
+                                      <div style="display: flex; flex-wrap: wrap; gap: 8px;">
+                                        ${extractedDetails.tags.map(tag => `
+                                          <span style="background: #e2e8f0; color: #475569; padding: 6px 12px; border-radius: 16px; font-size: 12px; font-weight: 500;">
+                                            ${tag || 'Unknown'}
+                                          </span>
+                                        `).join('')}
+                                      </div>
                                     </div>
                                   </div>
                                   ` : ''}
@@ -1634,12 +2027,12 @@ const DashboardEnhanced = () => {
                         Download Summary Report
                       </motion.button>
                     </div>
-                  </div>
+                  </motion.div>
                 ) : null}
               </div>
 
               {/* Footer */}
-              <div className="flex gap-3 p-6 border-t border-primary-200 bg-gray-50">
+              <div className="flex gap-3 p-6 border-t" style={{ borderColor: '#D3D8D1', backgroundColor: '#F9F8F7' }}>
                 <button
                   onClick={() => setShowExtractionModal(false)}
                   className="flex-1 btn-outline"

@@ -4,7 +4,7 @@ DEBUG=True
 ALLOWED_HOSTS=localhost,127.0.0.1
 
 # Gemini AI Configuration
-GEMINI_API_KEY=AIzaSyC7g0gjdt3rO-41QxV60KBLVioWrgCLROQ
+GEMINI_API_KEY=your-gemini-api-key-here-get-from-https://makersuite.google.com/app/apikey
 GEMINI_MODEL=gemini-2.5-flash
 
 # Database Configuration (SQLite by default)

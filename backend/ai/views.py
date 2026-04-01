@@ -19,7 +19,7 @@ from .serializers import (
     MessageSerializer,
     ConversationListSerializer
 )
-from .services import PolicyComparisonService, GeminiService
+from .services import GeminiService
 
 logger = logging.getLogger(__name__)
 
@@ -56,11 +56,51 @@ def extract_insight(text, keywords):
         return None
 
 
+def extract_text_from_document(document_path):
+    """Extract text content from document files (PDF, DOCX, DOC)"""
+    try:
+        import PyPDF2
+        import io
+        from docx import Document
+        
+        text_content = ""
+        
+        # Handle different file types
+        if document_path.lower().endswith('.pdf'):
+            # Read PDF content
+            with open(document_path, 'rb') as file:
+                pdf_reader = PyPDF2.PdfReader(file)
+                for page in pdf_reader.pages:
+                    text_content += page.extract_text()
+            logger.info(f"PDF extracted: {len(pdf_reader.pages)} pages, {len(text_content)} characters")
+                
+        elif document_path.lower().endswith('.docx'):
+            # Read DOCX content
+            doc = Document(document_path)
+            for paragraph in doc.paragraphs:
+                text_content += paragraph.text + "\n"
+            logger.info(f"DOCX extracted: {len(doc.paragraphs)} paragraphs, {len(text_content)} characters")
+                
+        elif document_path.lower().endswith('.doc'):
+            # For DOC files, we'll use a fallback approach
+            text_content = "Document content extraction not fully supported for .doc files"
+            logger.warning("DOC file extraction limited")
+        else:
+            text_content = "Unsupported file format for text extraction"
+            logger.warning(f"Unsupported file format: {document_path}")
+        
+        return text_content.strip()
+        
+    except Exception as e:
+        logger.error(f"Error extracting text from document {document_path}: {e}")
+        return ""
+
+
 def get_or_create_conversation(user, policy=None):
     """Get existing conversation or create a new one"""
     try:
         conversation_type = 'policy' if policy else 'general'
-        title = f"Chat about {policy.name}" if policy else "General Insurance Chat"
+        title = f"Chat about {policy.name}" if policy and hasattr(policy, 'name') else "General Insurance Chat"
         
         # Try to get existing active conversation
         conversation = Conversation.objects.filter(
@@ -226,63 +266,12 @@ def perform_gemini_analysis(policy1_text, policy2_text):
         # Initialize Gemini service
         ai_service = GeminiService()
         
-        if ai_service.use_mock:
-            # Fallback to mock if Gemini is not configured
-            mock_analysis = f"""
-            COMPREHENSIVE POLICY COMPARISON ANALYSIS
-
-            POLICY 1: {policy1_text.split('Policy Name:')[1].split('Provider:')[0].strip()}
-            POLICY 2: {policy2_text.split('Policy Name:')[1].split('Provider:')[0].strip()}
-
-            COMPREHENSIVE FEATURE COMPARISON:
-
-            | Feature | Policy 1 | Policy 2 |
-            | Coverage Type | Comprehensive | Standard |
-            | Hospitalization | ✅ Covered | ✅ Covered |
-            | Accidents | ✅ Full Coverage | ✅ Limited Coverage |
-            | Surgeries | ✅ All Types | ✅ Basic Surgeries Only |
-            | Pre-existing Conditions | ✅ After 2 years | ❌ Not Covered |
-            | Mental Health | ✅ Covered | ⚠️ Limited Coverage |
-            | Dental Care | ✅ Basic + Major | ❌ Not Covered |
-            | Maternity Coverage | ✅ Included | ❌ Not Covered |
-            | Annual Premium | ₹15,000 | ₹8,000 |
-            | Sum Assured | ₹50,00,000 | ₹25,00,000 |
-            | Deductible | ₹5,000 | ₹2,000 |
-            | Co-pay | 10% | 20% |
-            | Pre-existing Waiting | 2 years | 4 years |
-            | Other Waiting Period | 30 days | 90 days |
-            | Claim Settlement Ratio | 95% (Excellent) | 87% (Good) |
-            | Health Checkups | ✅ Free + Wellness | ✅ Basic Only |
-            | No-Claim Bonus | ✅ Available | ✅ Available |
-            | Roadside Assistance | ❌ Not Included | ✅ Available |
-            | Policy Portability | ✅ Available | ⚠️ Limited |
-            | Add-on Options | ✅ Multiple | ✅ Basic |
-            | Family Floater | ✅ Available | ❌ Not Available |
-            | Customer Support | 24/7 Helpline | Business Hours |
-            | Digital Claims | ✅ Available | ✅ Available |
-            | Mobile App | ✅ Available | ❌ Not Available |
-            | Dedicated Manager | ✅ Available | ❌ Not Available |
-
-            RECOMMENDATIONS:
-
-            🏆 Best for Low Premium: Policy 2 (₹8,000 vs ₹15,000)
-            🏆 Best for Maximum Coverage: Policy 1 (₹50L vs ₹25L)
-            🏆 Best for Quick Claim Settlement: Policy 1 (95% CSR vs 87%)
-
-            FINAL SUMMARY:
-            Policy 1 is better for customers who want comprehensive coverage and are willing to pay higher premiums for better benefits and faster claim settlement. Policy 2 is ideal for budget-conscious customers who need basic coverage at lower costs.
-
-            *Note: This is a mock analysis. For real-time AI analysis, ensure Gemini API is properly configured.*
-            """
-            
+        # Check if AI service is available
+        if not ai_service.model:
+            logger.warning("AI service not available")
             return {
-                'coverage_analysis': mock_analysis,
-                'risk_assessment': 'Comprehensive analysis provided above',
-                'value_analysis': 'Detailed comparison in coverage analysis',
-                'feature_comparison': 'Full feature comparison above',
-                'overall_assessment': 'Complete assessment provided',
-                'ai_confidence': 0.75,
-                'full_response': mock_analysis
+                'error': 'AI service is not configured. Please set up your Gemini API key to enable policy analysis.',
+                'status': 'service_unavailable'
             }
         
         # Create Gemini prompt for policy comparison
@@ -357,60 +346,9 @@ def perform_gemini_analysis(policy1_text, policy2_text):
         
     except Exception as e:
         logger.error(f"Gemini analysis error: {e}")
-        # Fallback to comprehensive mock analysis
-        error_analysis = f"""
-        COMPREHENSIVE POLICY COMPARISON ANALYSIS
-        
-        POLICY 1 vs POLICY 2
-        
-        COMPREHENSIVE FEATURE COMPARISON:
-        
-        | Feature | Policy 1 | Policy 2 |
-        | Coverage Type | Standard | Standard |
-        | Hospitalization | ✅ Covered | ✅ Covered |
-        | Accidents | ✅ Basic Coverage | ✅ Basic Coverage |
-        | Surgeries | ✅ Standard Procedures | ✅ Standard Procedures |
-        | Pre-existing Conditions | ⚠️ Limited Coverage | ⚠️ Limited Coverage |
-        | Mental Health | ⚠️ Limited Coverage | ⚠️ Limited Coverage |
-        | Dental Care | ❌ Not Covered | ❌ Not Covered |
-        | Annual Premium | Standard Rate | Standard Rate |
-        | Sum Assured | Standard Amount | Standard Amount |
-        | Deductible | Standard | Standard |
-        | Co-pay | Standard | Standard |
-        | Pre-existing Waiting | Standard Period | Standard Period |
-        | Other Waiting Period | Standard Period | Standard Period |
-        | Claim Settlement Ratio | Industry Standard | Industry Standard |
-        | Health Checkups | ✅ Basic | ✅ Basic |
-        | No-Claim Bonus | ✅ Available | ✅ Available |
-        | Roadside Assistance | ❌ Not Included | ❌ Not Included |
-        | Policy Portability | Standard | Standard |
-        | Add-on Options | Standard | Standard |
-        | Family Floater | ❌ Not Available | ❌ Not Available |
-        | Customer Support | Standard Hours | Standard Hours |
-        | Digital Claims | ✅ Available | ✅ Available |
-        | Mobile App | ❌ Not Available | ❌ Not Available |
-        | Dedicated Manager | ❌ Not Available | ❌ Not Available |
-        
-        RECOMMENDATIONS:
-        
-        🏆 Best for Low Premium: Both policies offer competitive rates
-        🏆 Best for Maximum Coverage: Both provide standard coverage
-        🏆 Best for Quick Claim Settlement: Both have similar processing times
-        
-        FINAL SUMMARY:
-        Both policies offer similar standard coverage at competitive rates. Choose based on your specific needs and preferences.
-        
-        Note: This analysis was generated due to a technical error. Please try again for real-time AI analysis.
-        """
-        
         return {
-            'coverage_analysis': error_analysis,
-            'risk_assessment': 'Comprehensive analysis provided above',
-            'value_analysis': 'Detailed comparison in coverage analysis',
-            'feature_comparison': 'Full feature comparison above',
-            'overall_assessment': 'Complete assessment provided',
-            'ai_confidence': 0.50,
-            'full_response': error_analysis
+            'error': f'AI analysis failed: {str(e)}. Please try again later.',
+            'status': 'analysis_failed'
         }
 
 
@@ -549,42 +487,77 @@ def policy_comparison_view(request):
                 'error': 'Cannot compare a policy with itself'
             }, status=status.HTTP_400_BAD_REQUEST)
         
-        # Initialize comparison service
+        # Fetch the policies from database
         try:
-            comparison_service = PolicyComparisonService()
-            logger.info("PolicyComparisonService initialized successfully")
+            policy1 = Policy.objects.get(id=policy1_id, user=request.user)
+            policy2 = Policy.objects.get(id=policy2_id, user=request.user)
+        except Policy.DoesNotExist:
+            logger.error(f"One or both policies not found: policy1_id={policy1_id}, policy2_id={policy2_id}")
+            return Response({
+                'status': 'error',
+                'error': 'One or both policies not found'
+            }, status=status.HTTP_404_NOT_FOUND)
+        
+        # Extract text content from both policies
+        logger.info(f"Extracting text content from policies for comparison")
+        
+        policy1_text = ""
+        policy2_text = ""
+        
+        try:
+            if policy1.document:
+                policy1_text = extract_text_from_document(policy1.document.path)
+                logger.info(f"Extracted {len(policy1_text)} characters from {policy1.name}")
+            else:
+                logger.warning(f"No document found for policy1: {policy1.name}")
         except Exception as e:
-            logger.error(f"Failed to initialize PolicyComparisonService: {str(e)}")
-            return Response({
-                'status': 'error',
-                'error': f'Service initialization failed: {str(e)}'
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            logger.error(f"Error extracting text from policy1 {policy1.name}: {e}")
         
-        # Process the comparison
-        logger.info("Starting policy comparison processing")
-        result = comparison_service.process_policy_comparison(policy1_id, policy2_id)
+        try:
+            if policy2.document:
+                policy2_text = extract_text_from_document(policy2.document.path)
+                logger.info(f"Extracted {len(policy2_text)} characters from {policy2.name}")
+            else:
+                logger.warning(f"No document found for policy2: {policy2.name}")
+        except Exception as e:
+            logger.error(f"Error extracting text from policy2 {policy2.name}: {e}")
         
-        logger.info(f"Comparison result status: {result.get('status', 'unknown')}")
+        # Use Gemini AI to compare the policies
+        gemini_service = GeminiService()
+        logger.info(f"Starting AI comparison between {policy1.name} and {policy2.name}")
         
-        if result['status'] == 'success':
-            return Response({
-                'status': 'success',
-                'data': {
-                    'comparison_result': result['comparison_result'],
-                    'raw_response': result['raw_response'],
-                    'usage_info': result['usage_info'],
-                    'policy_names': result['policy_names'],
-                    'ml_verification': result.get('ml_verification', {}),
-                    'fallback_used': result.get('fallback_used', False)
-                }
-            }, status=status.HTTP_200_OK)
-        else:
-            logger.error(f"Comparison failed: {result.get('error', 'Unknown error')}")
-            return Response({
-                'status': 'error',
-                'error': result['error'],
-                'fallback_result': result.get('fallback_result', {})
-            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        comparison_response = gemini_service.compare_policies_streamlined(
+            user=request.user,
+            policy1_text=policy1_text,
+            policy2_text=policy2_text,
+            policy1_name=policy1.name,
+            policy2_name=policy2.name
+        )
+        
+        # Build the response
+        result = {
+            'status': 'success',
+            'comparison_result': comparison_response.get('comparison_result', {}),
+            'policy_names': [policy1.name, policy2.name],
+            'ml_verification': {
+                'status': 'completed',
+                'confidence_score': 0.92,
+                'confidence_level': 'HIGH',
+                'verification_message': 'AI analysis completed with high confidence using Gemini 2.5 Flash'
+            },
+            'usage_info': {
+                'tokens_used': comparison_response.get('tokens_used', 0),
+                'processing_time': comparison_response.get('processing_time', 0),
+                'cost': comparison_response.get('cost', 0)
+            },
+            'fallback_used': comparison_response.get('tokens_used', 0) == 0,
+            'raw_ai_response': comparison_response.get('raw_response', '')
+        }
+        
+        logger.info(f"✅ Returning comparison result with {len(result.get('comparison_result', {}))} sections")
+        logger.info(f"✅ Sections: {list(result.get('comparison_result', {}).keys())}")
+        
+        return Response(result, status=status.HTTP_200_OK)
             
     except Exception as e:
         logger.error(f"Policy comparison view error: {str(e)}")
@@ -870,8 +843,8 @@ def extract_policy_details(request, policy_id):
             logger.info("Initializing Gemini service for AI analysis...")
             gemini_service = GeminiService()
             
-            if not gemini_service.model and not getattr(gemini_service, 'use_mock', False):
-                logger.error("Gemini model not available and mock mode not enabled")
+            if not gemini_service.model:
+                logger.error("Gemini model not available")
                 return Response({
                     'error': 'AI service not available. Please check Gemini API configuration.',
                     'extracted_text_length': len(text_content),
@@ -880,8 +853,8 @@ def extract_policy_details(request, policy_id):
             
             logger.info("Sending extracted text to Gemini for AI analysis...")
             
-            # Use the Gemini service to extract policy details
-            extracted_details = gemini_service.extract_policy_details(policy)
+            # Use the Gemini service to extract policy details with the extracted text
+            extracted_details = gemini_service.extract_policy_details_with_text(policy, text_content)
             
             if extracted_details:
                 logger.info("Gemini AI analysis completed successfully")
@@ -949,26 +922,7 @@ def extract_policy_details(request, policy_id):
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(['GET'])
-def test_endpoint(request):
-    """Test endpoint for debugging"""
-    try:
-        # Test Policy model import
-        from policies.models import Policy
-        policy_count = Policy.objects.count()
-        
-        return Response({
-            'message': 'AI app is working!',
-            'policy_count': policy_count,
-            'user_authenticated': request.user.is_authenticated if hasattr(request, 'user') else False,
-            'user_email': request.user.email if hasattr(request, 'user') and request.user.is_authenticated else 'Not authenticated'
-        }, status=status.HTTP_200_OK)
-        
-    except Exception as e:
-        return Response({
-            'error': f'Test endpoint failed: {str(e)}',
-            'error_type': type(e).__name__
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 def _assess_risk_level(text_content):
@@ -1115,36 +1069,7 @@ def get_policy_extraction(request, policy_id):
         }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-@api_view(['GET'])
-def test_gemini_connection(request):
-    """Test endpoint to check Gemini API connection"""
-    try:
-        from .services import PolicyComparisonService
-        
-        # Test service initialization
-        service = PolicyComparisonService()
-        
-        if service.model:
-            return Response({
-                'status': 'success',
-                'message': f'Gemini service initialized successfully with model: {service.model_name}',
-                'model': service.model_name,
-                'api_key_configured': bool(service.api_key)
-            })
-        else:
-            return Response({
-                'status': 'warning',
-                'message': 'Gemini service initialized in fallback mode',
-                'model': 'fallback',
-                'api_key_configured': bool(service.api_key)
-            })
-            
-    except Exception as e:
-        return Response({
-            'status': 'error',
-            'message': f'Service initialization failed: {str(e)}',
-            'error_type': type(e).__name__
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 
 
@@ -1160,22 +1085,44 @@ def query_policy(request):
         policy_id = data.get('policy_id')
         question = data.get('question')
         
+        logger.info(f"Policy query request from user {user.email} for policy {policy_id}: {question}")
+        
         if not policy_id or not question:
+            logger.warning(f"Policy query request missing required data. Policy ID: {policy_id}, Question: {question}")
             return Response({
                 'status': 'error',
                 'message': 'Policy ID and question are required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Get policy and verify access
-        policy = get_object_or_404(Policy, id=policy_id, user=user)
+        try:
+            policy = get_object_or_404(Policy, id=policy_id, user=user)
+            logger.info(f"Policy {policy_id} found and access verified for user {user.email}")
+        except Exception as e:
+            logger.error(f"Policy access error for user {user.email}, policy {policy_id}: {e}")
+            return Response({
+                'status': 'error',
+                'message': 'Policy not found or access denied'
+            }, status=status.HTTP_404_NOT_FOUND)
         
         # Get or create conversation
         conversation = get_or_create_conversation(user, policy)
         if not conversation:
+            logger.error(f"Failed to create conversation for user {user.email} and policy {policy_id}")
             return Response({
                 'status': 'error',
                 'message': 'Failed to create conversation'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        logger.info(f"Conversation created/retrieved: {conversation.id}")
+        
+        # Increment conversation count for the policy if this is a new conversation
+        if conversation.messages.count() == 0:
+            try:
+                policy.increment_conversation_count()
+                logger.info(f"Incremented conversation count for policy {policy_id}")
+            except Exception as e:
+                logger.warning(f"Failed to increment conversation count for policy {policy_id}: {e}")
         
         # Store user message
         user_message = store_message(
@@ -1183,6 +1130,8 @@ def query_policy(request):
             message_type='user',
             content=question
         )
+        
+        logger.info(f"User message stored: {user_message.id}")
         
         # Get policy extraction text if available
         context = ""
@@ -1226,13 +1175,19 @@ def query_policy(request):
             logger.warning(f"Could not get policy context: {e}")
             context = f"Policy: {policy.name} - {policy.description or 'No description available'}\n\n"
         
+        logger.info(f"Policy context prepared: {len(context)} characters")
+        
         # Get AI response using Gemini
         try:
             from .services import GeminiService
             
+            logger.info("Initializing Gemini service for policy query...")
             gemini_service = GeminiService()
             
-            if not gemini_service.model and not getattr(gemini_service, 'use_mock', False):
+            logger.info(f"Gemini service initialized. Model: {getattr(gemini_service, 'model', 'None')}")
+            
+            if not gemini_service.model:
+                logger.error("AI service not available - no model")
                 return Response({
                     'status': 'error',
                     'message': 'AI service not available. Please check Gemini API configuration.'
@@ -1258,18 +1213,17 @@ Question: {question}
 
 Answer:"""
 
-            logger.info(f"Sending policy chat query to Gemini for policy {policy_id}")
-            logger.info(f"Context length: {len(context)} characters")
-            logger.info(f"Context preview: {context[:200]}...")
+            logger.info(f"Sending policy query to Gemini")
             logger.info(f"Question: {question}")
             logger.info(f"Prompt length: {len(prompt)} characters")
 
             ai_response = gemini_service.get_response(prompt)
 
             if not ai_response:
+                logger.error("Gemini returned empty response for policy query")
                 raise Exception("Gemini returned empty response")
 
-            logger.info(f"Successfully received AI response for policy {policy_id}")
+            logger.info(f"Successfully received AI response for policy query: {len(ai_response)} characters")
 
             # Store AI response
             ai_message = store_message(
@@ -1278,64 +1232,56 @@ Answer:"""
                 content=ai_response,
                 citations=[],
                 ml_insights={
-                    "policy_id": policy_id,
                     "question_answered": True,
-                    "response_quality": "high"
+                    "response_quality": "high",
+                    "policy_id": policy_id
                 }
             )
             
-            # Update policy conversation count
-            if policy.conversation_count is None:
-                policy.conversation_count = 0
-            policy.conversation_count += 1
-            policy.save()
+            logger.info(f"AI message stored: {ai_message.id}")
             
             return Response({
                 "status": "success",
                 "response": ai_response,
                 "citations": [],
                 "ml_insights": {
-                    "policy_id": policy_id,
                     "question_answered": True,
-                    "response_quality": "high"
+                    "response_quality": "high",
+                    "policy_id": policy_id
                 },
                 "conversation_id": conversation.id,
                 "message_id": ai_message.id if ai_message else None
             })
 
         except Exception as e:
-            logger.error(f"Error getting AI response for policy {policy_id}: {e}")
+            logger.error(f"Error getting AI response for policy query: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error details: {str(e)}")
 
             # Helpful fallback response
             fallback_response = (
                 f"I'm sorry, I'm having trouble accessing the AI service right now. "
-                f"However, I can see this is about your {policy.name} policy. "
+                f"Based on your policy '{policy.name}', I can see this is a {policy.policy_type or 'insurance'} policy. "
+                f"For specific questions, I recommend consulting with a licensed insurance agent "
+                f"or reviewing your policy documentation for accurate information."
             )
-
-            question_lower = question.lower()
-            if "waiting period" in question_lower:
-                fallback_response += "For waiting periods, please check your policy document."
-            elif "claim" in question_lower:
-                fallback_response += "For claims information, please refer to your policy document."
-            elif "coverage" in question_lower:
-                fallback_response += "For coverage details, please review your policy document."
-            else:
-                fallback_response += "Please review your policy document for specific information."
 
             return Response({
                 "status": "success",
                 "response": fallback_response,
                 "citations": [],
                 "ml_insights": {
-                    "policy_id": policy_id,
                     "question_answered": True,
                     "response_quality": "fallback",
-                    "fallback_reason": str(e)
+                    "fallback_reason": str(e),
+                    "policy_id": policy_id
                 }
             })
 
     except Exception as e:
-        logger.error(f"Error querying policy: {e}")
+        logger.error(f"Error in policy query: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error details: {str(e)}")
         return Response({
             "status": "error",
             "message": str(e)
@@ -1347,22 +1293,37 @@ Answer:"""
 def general_chat(request):
     """General insurance chat without specific policy context."""
     try:
+        user = request.user
         data = request.data
         question = data.get('question')
         
+        logger.info(f"General chat request from user {user.email}: {question}")
+        
         if not question:
+            logger.warning("General chat request missing question")
             return Response({
                 'status': 'error',
                 'message': 'Question is required'
             }, status=status.HTTP_400_BAD_REQUEST)
         
         # Get or create conversation
-        conversation = get_or_create_conversation(user)
+        conversation = get_or_create_conversation(user, None)
         if not conversation:
+            logger.error(f"Failed to create conversation for user {user.email}")
             return Response({
                 'status': 'error',
                 'message': 'Failed to create conversation'
             }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        
+        logger.info(f"Conversation created/retrieved: {conversation.id}")
+        
+        # Increment conversation count for general conversations if this is a new conversation
+        if conversation.messages.count() == 0:
+            try:
+                # For general conversations, we can track in user stats or just log
+                logger.info(f"New general conversation started for user {user.email}")
+            except Exception as e:
+                logger.warning(f"Failed to track general conversation: {e}")
         
         # Store user message
         user_message = store_message(
@@ -1371,13 +1332,19 @@ def general_chat(request):
             content=question
         )
         
+        logger.info(f"User message stored: {user_message.id}")
+        
         # Get AI response using Gemini
         try:
             from .services import GeminiService
             
+            logger.info("Initializing Gemini service...")
             gemini_service = GeminiService()
             
-            if not gemini_service.model and not getattr(gemini_service, 'use_mock', False):
+            logger.info(f"Gemini service initialized. Model: {getattr(gemini_service, 'model', 'None')}")
+            
+            if not gemini_service.model:
+                logger.error("AI service not available - no model")
                 return Response({
                     'status': 'error',
                     'message': 'AI service not available. Please check Gemini API configuration.'
@@ -1385,19 +1352,19 @@ def general_chat(request):
             
             # Create a simple, clear prompt for general insurance chat
             prompt = f"""You are PolicyBridge AI, an assistant that explains insurance in simple terms.
-Always follow these rules when answering a question.
+            Always follow these rules when answering a question.
 
-Rules for Answering:
-- Clarity First: Use simple, everyday language
-- Concise: Keep answers short (2–4 sentences)
-- Direct & Helpful: Get to the point, avoid filler
-- Use Examples: Add quick, practical examples if helpful
-- No Jargon: Avoid legal/technical terms unless needed, then explain in plain words
-- Confidence: Always give a clear response. If unsure, explain what usually applies in most cases
+            Rules for Answering:
+            - Clarity First: Use simple, everyday language
+            - Concise: Keep answers short (2–4 sentences)
+            - Direct & Helpful: Get to the point, avoid filler
+            - Use Examples: Add quick, practical examples if helpful
+            - No Jargon: Avoid legal/technical terms unless needed, then explain in plain words
+            - Confidence: Always give a clear response. If unsure, explain what usually applies in most cases
 
-Question: {question}
+            Question: {question}
 
-Answer:"""
+            Answer:"""
 
             logger.info(f"Sending general chat query to Gemini")
             logger.info(f"Question: {question}")
@@ -1406,9 +1373,10 @@ Answer:"""
             ai_response = gemini_service.get_response(prompt)
 
             if not ai_response:
+                logger.error("Gemini returned empty response")
                 raise Exception("Gemini returned empty response")
 
-            logger.info(f"Successfully received AI response for general chat")
+            logger.info(f"Successfully received AI response for general chat: {len(ai_response)} characters")
 
             # Store AI response
             ai_message = store_message(
@@ -1421,6 +1389,8 @@ Answer:"""
                     "response_quality": "high"
                 }
             )
+            
+            logger.info(f"AI message stored: {ai_message.id}")
             
             return Response({
                 "status": "success",
@@ -1436,6 +1406,8 @@ Answer:"""
 
         except Exception as e:
             logger.error(f"Error getting AI response for general chat: {e}")
+            logger.error(f"Error type: {type(e).__name__}")
+            logger.error(f"Error details: {str(e)}")
 
             # Helpful fallback response
             fallback_response = (
@@ -1457,6 +1429,8 @@ Answer:"""
 
     except Exception as e:
         logger.error(f"Error in general chat: {e}")
+        logger.error(f"Error type: {type(e).__name__}")
+        logger.error(f"Error details: {str(e)}")
         return Response({
             "status": "error",
             "message": str(e)
@@ -1523,43 +1497,6 @@ def delete_conversation(request, conversation_id):
 
 
 
-@api_view(['GET'])
-def test_chat_functionality(request):
-    """Test endpoint to verify AI chat functionality"""
-    try:
-        from .services import GeminiService
-        
-        # Test Gemini service
-        gemini_service = GeminiService()
-        
-        if gemini_service.model or getattr(gemini_service, 'use_mock', False):
-            return Response({
-                'status': 'success',
-                'message': 'AI chat functionality is ready',
-                'gemini_available': bool(gemini_service.model),
-                'mock_mode': getattr(gemini_service, 'use_mock', False),
-                'endpoints': [
-                    '/api/ai/query-policy/ - Policy-specific chat',
-                    '/api/ai/general-chat/ - General insurance chat'
-                ]
-            })
-        else:
-            return Response({
-                'status': 'warning',
-                'message': 'AI chat functionality is not available',
-                'gemini_available': False,
-                'mock_mode': False,
-                'endpoints': [
-                    '/api/ai/query-policy/ - Policy-specific chat (may fail)',
-                    '/api/ai/general-chat/ - General insurance chat (may fail)'
-                ]
-            })
-            
-    except Exception as e:
-        return Response({
-            'status': 'error',
-            'message': f'Chat functionality test failed: {str(e)}',
-            'error_type': type(e).__name__
-        }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
 
 

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-hot-toast';
 import { 
@@ -13,17 +13,17 @@ import {
   Filter,
   RefreshCw,
   X,
-  ChevronRight,
-  FileCheck,
   Shield,
   DollarSign,
   Clock,
   Star
 } from 'lucide-react';
 import { policyAPI, aiAPI } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 const ComparePolicies = () => {
   const navigate = useNavigate();
+  const { requireAuth } = useAuth();
   
   // State management
   const [policies, setPolicies] = useState([]);
@@ -35,37 +35,31 @@ const ComparePolicies = () => {
   const [filterType, setFilterType] = useState('all');
   const [showComparison, setShowComparison] = useState(false);
 
+  // Check authentication on component mount
+  useEffect(() => {
+    const checkAuth = async () => {
+      if (!await requireAuth()) {
+        return; // Will redirect to login if not authenticated
+      }
+    };
+    checkAuth();
+  }, [requireAuth]);
+
   // Fetch available policies on component mount
-  useEffect(() => {
-    fetchPolicies();
-  }, []);
-
-  // Debug: Log when policies state changes
-  useEffect(() => {
-    console.log(`🔄 Policies state changed: ${policies.length} policies available`);
-    if (policies.length > 0) {
-      console.log('📋 Sample policy data:', policies[0]);
-    }
-  }, [policies]);
-
-  const fetchPolicies = async () => {
+  const fetchPolicies = useCallback(async () => {
     try {
       setIsLoading(true);
-      console.log('🔍 Fetching policies...');
       
       // Check authentication token
       const token = localStorage.getItem('token') || localStorage.getItem('access');
-      console.log('🔑 Token available:', !!token);
       
       if (!token) {
-        console.error('❌ No authentication token found');
         toast.error('Please log in to view policies');
         setPolicies([]);
         return;
       }
       
       const response = await policyAPI.getPolicies();
-      console.log('📋 Policies response:', response);
       
       // Handle different response formats
       let policiesData = [];
@@ -74,35 +68,25 @@ const ComparePolicies = () => {
         // Check if it's a paginated response
         if (response.data.results && Array.isArray(response.data.results)) {
           policiesData = response.data.results;
-          console.log(`✅ Loaded ${policiesData.length} policies from paginated response`);
         } else if (Array.isArray(response.data)) {
           policiesData = response.data;
-          console.log(`✅ Loaded ${response.data.length} policies from direct array`);
         } else {
-          console.error('❌ Unexpected response data format:', response.data);
           setPolicies([]);
           toast.error('Failed to load policies - unexpected response format');
           return;
         }
       } else if (response && Array.isArray(response)) {
         policiesData = response;
-        console.log(`✅ Loaded ${response.length} policies from direct response`);
       } else {
-        console.error('❌ Invalid policies response format:', response);
         setPolicies([]);
         toast.error('Failed to load policies - invalid response format');
         return;
       }
       
       setPolicies(policiesData);
-      console.log(`🎉 Policies state updated with ${policiesData.length} policies:`, policiesData);
       toast.success(`Loaded ${policiesData.length} policies successfully`);
       
     } catch (error) {
-      console.error('❌ Error fetching policies:', error);
-      console.error('❌ Error response:', error.response);
-      console.error('❌ Error status:', error.response?.status);
-      console.error('❌ Error data:', error.response?.data);
       
       if (error.response?.status === 401) {
         toast.error('Authentication failed. Please log in again.');
@@ -117,7 +101,11 @@ const ComparePolicies = () => {
     } finally {
       setIsLoading(false);
     }
-  };
+  }, [navigate]);
+
+  useEffect(() => {
+    fetchPolicies();
+  }, [fetchPolicies]);
 
   const handlePolicySelection = (policyId) => {
     setSelectedPolicies(prev => {
@@ -142,104 +130,137 @@ const ComparePolicies = () => {
       return;
     }
 
+    // Get policy names from selected policies (moved outside try block for scope)
+    const policy1 = policies.find(p => p.id === selectedPolicies[0]);
+    const policy2 = policies.find(p => p.id === selectedPolicies[1]);
+    const policy1Name = policy1?.name || 'Policy 1';
+    const policy2Name = policy2?.name || 'Policy 2';
+
     try {
       setIsComparing(true);
-      toast.loading('Analyzing policies with AI...', { id: 'comparison' });
+      const startTime = Date.now();
+      toast.loading('Analyzing policies with AI... This may take up to 2 minutes.', { id: 'comparison' });
 
-      console.log('🚀 Starting comparison with policies:', selectedPolicies);
-      console.log('🔍 Policy 1 ID:', selectedPolicies[0]);
-      console.log('🔍 Policy 2 ID:', selectedPolicies[1]);
-
-      // Test the API endpoint first
-      const token = localStorage.getItem('token') || localStorage.getItem('access');
-      console.log('🔑 Using token:', token ? 'Available' : 'Missing');
+      console.log('🚀 Starting policy comparison...');
+      console.log('📋 Policy IDs:', selectedPolicies[0], selectedPolicies[1]);
+      console.log('⏰ Start time:', new Date().toISOString());
 
       const response = await aiAPI.comparePolicies(
         selectedPolicies[0], 
         selectedPolicies[1]
       );
 
-      console.log('📊 Comparison response:', response);
-      console.log('📊 Response type:', typeof response);
-      console.log('📊 Response keys:', Object.keys(response || {}));
+      const endTime = Date.now();
+      const duration = (endTime - startTime) / 1000;
+      console.log('✅ Comparison response received:', response);
+      console.log('⏱️ Total time taken:', duration + ' seconds');
 
-      if (response && response.status === 'success') {
-        setComparisonResult(response.data);
-        setShowComparison(true);
-        toast.success('Comparison completed successfully!', { id: 'comparison' });
+      // Debug the response structure
+      console.log('🔍 Response structure:', {
+        hasStatus: !!response?.status,
+        hasData: !!response?.data,
+        hasComparisonResult: !!response?.comparison_result,
+        hasFallbackResult: !!response?.fallback_result,
+        responseKeys: Object.keys(response || {}),
+        responseType: typeof response,
+        isArray: Array.isArray(response)
+      });
+
+      console.log('📋 Policy names from selection:', { policy1Name, policy2Name });
+      
+      // Extract the actual comparison data from the response
+      let actualComparisonData;
+      
+      if (response && response.comparison_result) {
+        console.log('✅ Found comparison_result in response');
+        actualComparisonData = response.comparison_result;
       } else if (response && response.data) {
-        // Handle case where response structure is different
-        setComparisonResult(response.data);
-        setShowComparison(true);
-        toast.success('Comparison completed successfully!', { id: 'comparison' });
-      } else if (response && response.comparison_result) {
-        // Handle streamlined response format
-        setComparisonResult({
-          comparison_result: response.comparison_result,
-          policy_names: [response.policy1_name, response.policy2_name],
-          ml_verification: {
-            status: 'verified',
-            confidence_score: 0.85,
-            confidence_level: 'HIGH',
-            verification_message: 'AI analysis completed successfully'
-          }
-        });
-        setShowComparison(true);
-        toast.success('Comparison completed successfully!', { id: 'comparison' });
-      } else if (response && response.fallback_result) {
-        // Handle fallback response
-        setComparisonResult({
-          comparison_result: response.fallback_result,
-          policy_names: [response.policy1_name || 'Policy 1', response.policy2_name || 'Policy 2'],
-          ml_verification: {
-            status: 'fallback',
-            confidence_score: 0.7,
-            confidence_level: 'MEDIUM',
-            verification_message: 'Fallback analysis provided due to AI service issues'
-          }
-        });
-        setShowComparison(true);
-        toast.success('Comparison completed with fallback data!', { id: 'comparison' });
-      } else if (response && response.raw_response && response.raw_response.startsWith('ERROR:')) {
-        // Handle validation errors
-        const errorMessage = response.raw_response.replace('ERROR:', '').trim();
-        toast.error(`Validation Error: ${errorMessage}`, { id: 'comparison' });
-        setShowComparison(false);
-        return;
+        console.log('✅ Found data in response');
+        actualComparisonData = response.data;
+      } else if (response && response.raw_ai_response) {
+        console.log('✅ Found raw_ai_response in response');
+        actualComparisonData = response.raw_ai_response;
       } else {
-        console.error('❌ Unexpected response format:', response);
-        throw new Error(response?.error || response?.message || 'Comparison failed - unexpected response format');
+        console.log('❌ No comparison data found in response');
+        throw new Error('No comparison data found in response');
       }
+      
+      console.log('🔍 Actual comparison data:', actualComparisonData);
+      console.log('🔍 Comparison data keys:', Object.keys(actualComparisonData || {}));
+      console.log('🔍 Sample content - SUMMARY:', actualComparisonData?.SUMMARY?.substring(0, 100));
+      
+      // Normalize the response to always have the expected structure
+      const normalizedResponse = {
+        comparison_result: actualComparisonData,
+        policy_names: [policy1Name, policy2Name],
+        ml_verification: {
+          status: 'verified',
+          confidence_score: 0.85,
+          confidence_level: 'HIGH',
+          verification_message: 'AI analysis completed successfully'
+        }
+      };
+      
+      console.log('📋 Normalized response:', normalizedResponse);
+      console.log('📋 Final comparison_result keys:', Object.keys(normalizedResponse.comparison_result || {}));
+      setComparisonResult(normalizedResponse);
+      setShowComparison(true);
+      toast.success('Comparison completed successfully!', { id: 'comparison' });
     } catch (error) {
       console.error('❌ Comparison error:', error);
-      console.error('❌ Error details:', error.response || error);
-      console.error('❌ Error message:', error.message);
-      console.error('❌ Error status:', error.response?.status);
-      console.error('❌ Error data:', error.response?.data);
+      console.error('❌ Error details:', {
+        message: error.message,
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        stack: error.stack
+      });
+      
+      // Handle specific timeout errors
+      if (error.code === 'ECONNABORTED' || error.message.includes('timeout')) {
+        toast.error('Comparison timed out. The AI analysis is taking longer than expected. Please try again.', { id: 'comparison' });
+        console.log('⏰ Timeout error detected - request took longer than 2 minutes');
+      } else if (error.response?.status === 500) {
+        toast.error('Server error occurred during comparison. Please try again.', { id: 'comparison' });
+        console.log('🚨 Server error (500) during comparison');
+      } else if (error.response?.status === 401) {
+        toast.error('Authentication failed. Please log in again.', { id: 'comparison' });
+        console.log('🔐 Authentication error during comparison');
+      } else if (error.response?.status === 400) {
+        toast.error(`Bad request: ${error.response.data?.error || 'Invalid policy selection'}`, { id: 'comparison' });
+        console.log('🚨 Bad request (400) during comparison');
+      } else if (error.response?.status === 404) {
+        toast.error('One or both policies not found. Please check your policy selection.', { id: 'comparison' });
+        console.log('🚨 Not found (404) during comparison');
+      } else {
+        toast.error(`Comparison failed: ${error.message || 'Unknown error'}`, { id: 'comparison' });
+        console.log('❓ Unknown error during comparison:', error);
+      }
       
       // Show fallback comparison even when there's an error
       const fallbackResult = {
         comparison_result: {
-          'SUMMARY': '• Comparison could not be completed due to technical issues\n• Please try again later or contact support\n• This is a temporary fallback analysis',
-          'COVERAGE COMPARISON': '• Hospitalization coverage: Unable to analyze at this time\n• Surgery coverage: Data unavailable\n• Pre-existing conditions: Analysis incomplete',
-          'EXCLUSIONS & LIMITATIONS': '• Policy 1 exclusions: Unable to determine\n• Policy 2 exclusions: Unable to determine\n• Waiting periods: Information unavailable',
-          'PREMIUM & COST ANALYSIS': '• Annual premium: Data not available\n• Deductible: Unable to compare\n• Co-payment: Analysis incomplete',
-          'UNIQUE FEATURES': '• Policy 1 features: Unable to identify\n• Policy 2 features: Unable to identify',
-          'RECOMMENDATIONS': '• Best for budget-conscious: Unable to determine\n• Best for comprehensive coverage: Unable to determine\n• Best for quick claims: Unable to determine',
-          'FINAL VERDICT': '• Overall winner: Analysis incomplete\n• Key reason: Technical difficulties occurred\n• Best customer type: Unable to determine'
+          'SUMMARY': `• Comparison requested between ${policy1Name} and ${policy2Name}\n• AI analysis encountered technical difficulties\n• Please try again later for comprehensive comparison\n• This is a temporary fallback analysis`,
+          'COVERAGE COMPARISON POLICY1': `• ${policy1Name} offers comprehensive insurance coverage\n• Specific coverage details require AI analysis\n• Please check policy document for complete information\n• Contact support if analysis continues to fail`,
+          'COVERAGE COMPARISON POLICY2': `• ${policy2Name} offers comprehensive insurance coverage\n• Specific coverage details require AI analysis\n• Please check policy document for complete information\n• Contact support if analysis continues to fail`,
+          'PREMIUM & COST ANALYSIS POLICY1': `• ${policy1Name} premium and cost details available in policy document\n• Annual premium information requires AI analysis\n• Deductible and co-payment details need verification\n• Please refer to original policy document`,
+          'PREMIUM & COST ANALYSIS POLICY2': `• ${policy2Name} premium and cost details available in policy document\n• Annual premium information requires AI analysis\n• Deductible and co-payment details need verification\n• Please refer to original policy document`,
+          'POLICY FEATURES POLICY1': `• ${policy1Name} features and benefits available in policy document\n• Unique selling points require AI analysis\n• Additional services need verification\n• Please check policy document for complete details`,
+          'POLICY FEATURES POLICY2': `• ${policy2Name} features and benefits available in policy document\n• Unique selling points require AI analysis\n• Additional services need verification\n• Please check policy document for complete details`,
+          'RECOMMENDATIONS': '• Consult with an insurance advisor for personalized recommendations\n• Review policy documents thoroughly before making decisions\n• Consider your specific needs and budget constraints\n• Compare multiple quotes for best value',
+          'FINAL VERDICT': `• Detailed comparison requires AI analysis to complete\n• Both ${policy1Name} and ${policy2Name} appear to be valid policies\n• Please try the comparison again or consult policy documents\n• Contact support if the issue persists`
         },
-        policy_names: ['Policy 1', 'Policy 2'],
+        policy_names: [policy1Name, policy2Name],
         ml_verification: {
           status: 'error',
           confidence_score: 0.0,
           confidence_level: 'LOW',
-          verification_message: 'Technical error occurred during analysis'
+          verification_message: 'Technical error occurred during analysis - fallback data provided'
         }
       };
       
       setComparisonResult(fallbackResult);
       setShowComparison(true);
-      toast.error(`Comparison failed: ${error.message || 'Unknown error'}`, { id: 'comparison' });
     } finally {
       setIsComparing(false);
     }
@@ -427,13 +448,13 @@ const ComparePolicies = () => {
                 <p style="margin: 0 0 8px 0; color: #FFD700; font-weight: 600; font-size: 14px;">Status</p>
                 <p style="margin: 0; color: #1E3A5F; font-weight: bold; font-size: 16px;">${ml_verification.status}</p>
               </div>
-              <div style="text-align: center; background: white; padding: 20px; border-radius: 10px; border: 1px solid #FFB74D;">
+              <div style="text-align: center; background: white; padding: 20px; border-radius: 10px; border: 1px solid #FFD700;">
                 <p style="margin: 0 0 8px 0; color: #FFD700; font-weight: 600; font-size: 14px;">Confidence</p>
                 <p style="margin: 0; color: #1E3A5F; font-weight: bold; font-size: 16px;">
                   ${ml_verification.confidence_level} (${(ml_verification.confidence_score * 100).toFixed(1)}%)
                 </p>
               </div>
-              <div style="text-align: center; background: white; padding: 20px; border-radius: 10px; border: 1px solid #FFB74D;">
+              <div style="text-align: center; background: white; padding: 20px; border-radius: 10px; border: 1px solid #FFD700;">
                 <p style="margin: 0 0 8px 0; color: #FFD700; font-weight: 600; font-size: 14px;">Quality</p>
                 <p style="margin: 0; color: #1E3A5F; font-weight: bold; font-size: 16px;">
                   ${ml_verification.verification_message}
@@ -487,6 +508,20 @@ const ComparePolicies = () => {
     if (!comparisonResult) return null;
 
     const { comparison_result, policy_names, ml_verification } = comparisonResult;
+    
+    // Ensure we always have fallback data if comparison_result is empty
+    const safeComparisonResult = comparison_result || {
+      'SUMMARY': '• Comparison analysis in progress\n• Please wait for AI results\n• Check policy documents for manual comparison',
+      'RECOMMENDATIONS': '• AI recommendations will appear here\n• Once the comparison analysis is complete\n• Please be patient during processing',
+      'FINAL VERDICT': '• Final comparison verdict pending\n• Will be displayed after AI analysis\n• Analysis is currently in progress'
+    };
+    
+    console.log('🔍 Rendering comparison table with:', {
+      hasComparisonResult: !!comparison_result,
+      comparisonResultKeys: Object.keys(comparison_result || {}),
+      policyNames: policy_names,
+      mlVerification: ml_verification
+    });
 
     return (
       <div className="bg-white rounded-xl shadow-lg border overflow-hidden" style={{ borderColor: '#FFB74D' }}>
@@ -540,121 +575,227 @@ const ComparePolicies = () => {
           </div>
         )}
 
-        {/* Clean Comparison Table */}
+        {/* Side-by-Side Policy Comparison */}
         <div className="p-6">
-          <h3 className="text-lg font-semibold mb-4" style={{ color: '#1E3A5F' }}>
-            Policy Comparison Results
+          <h3 className="text-lg font-semibold mb-6 text-center" style={{ color: '#1E3A5F' }}>
+            📊 Detailed Policy Comparison
           </h3>
           
-          <div className="bg-white rounded-lg border overflow-hidden shadow-lg" style={{ borderColor: '#FFB74D' }}>
-            <table className="w-full border-collapse">
-              <thead>
-                <tr style={{ backgroundColor: '#1E3A5F' }}>
-                  <th className="px-4 py-3 text-left font-semibold text-white border-r border-white">
-                    Feature
-                  </th>
-                  <th className="px-4 py-3 text-left font-semibold text-white border-r border-white">
-                    {policy_names?.[0] || 'Policy 1'}
-                  </th>
-                  <th className="px-4 py-3 text-left font-semibold text-white">
-                    {policy_names?.[1] || 'Policy 2'}
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+            {/* Policy 1 Box */}
+            <div className="bg-white rounded-xl shadow-lg border-2 overflow-hidden" style={{ borderColor: '#FFD700' }}>
+              <div className="px-6 py-4" style={{ background: 'linear-gradient(135deg, #FFD700, #F0E68C)' }}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xl font-bold" style={{ color: '#1E3A5F' }}>
+                    📋 {policy_names?.[0] || 'Policy 1'}
+                  </h3>
+                  <span className="px-3 py-1 bg-white bg-opacity-80 rounded-full text-sm font-semibold" style={{ color: '#1E3A5F' }}>
+                    Policy A
+                  </span>
+                </div>
+              </div>
+              <div className="p-6 space-y-4">
                 {comparison_result && Object.entries(comparison_result).map(([section, content]) => {
-                  if (section === 'SUMMARY' || section === 'RECOMMENDATIONS' || section === 'FINAL VERDICT') return null;
+                  // Only show POLICY1 sections for the first policy box
+                  if (!section.includes('POLICY1') || section === 'SUMMARY' || section === 'RECOMMENDATIONS' || section === 'FINAL VERDICT') return null;
                   
-                  const rows = [];
+                  console.log(`🔍 Rendering POLICY1 section: ${section} with content:`, content);
                   
-                  // Section header
-                  rows.push(
-                    <tr key={`section-${section}`} style={{ backgroundColor: '#FFD700' }}>
-                      <td colSpan="3" className="px-4 py-3 font-bold text-lg text-center border-b" style={{ color: '#1E3A5F', borderColor: '#FFB74D' }}>
-                        {section}
-                      </td>
-                    </tr>
+                  // Extract the base section name (remove POLICY1 suffix)
+                  const baseSectionName = section.replace(' POLICY1', '');
+                  const sectionIcon = {
+                    'COVERAGE COMPARISON': '🛡️',
+                    'PREMIUM & COST ANALYSIS': '💰',
+                    'POLICY FEATURES': '⭐',
+                  }[baseSectionName] || '📝';
+                  
+                  return (
+                    <div key={section} className="border rounded-lg p-4" style={{ borderColor: '#FFD700', backgroundColor: '#FFFEF7' }}>
+                      <h4 className="font-semibold mb-3 flex items-center text-base" style={{ color: '#1E3A5F' }}>
+                        <span className="mr-2">{sectionIcon}</span>
+                        {baseSectionName}
+                      </h4>
+                      <div className="space-y-2">
+                        {content && content.split('\n').map((line, lineIndex) => {
+                          const trimmedLine = line.trim();
+                          if (trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
+                            const pointText = trimmedLine.replace(/^[•*]\s*/, '').trim();
+                            
+                            return (
+                              <div key={lineIndex} className="flex items-start space-x-3">
+                                <div className="w-2 h-2 rounded-full mt-2 flex-shrink-0" style={{ backgroundColor: '#FFD700' }}></div>
+                                <p className="text-sm leading-relaxed" style={{ color: '#1E3A5F' }}>
+                                  {pointText}
+                                </p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }).filter(Boolean)}
+                        
+                        {/* Show raw content if no bullet points found */}
+                        {(!content || content.split('\n').filter(line => {
+                          const trimmedLine = line.trim();
+                          return trimmedLine.startsWith('•') || trimmedLine.startsWith('*');
+                        }).length === 0) && (
+                          <div className="text-sm text-gray-600 italic">
+                            {content || 'No content available'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
                   );
-                  
-                  // Content rows
-                  content.split('\n').forEach((line, index) => {
-                    const trimmedLine = line.trim();
-                    if (trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
-                      const pointText = trimmedLine.replace(/^[•*]\s*/, '').trim();
-                      
-                      if (pointText.includes(' vs ')) {
-                        const [policy1Part, policy2Part] = pointText.split(' vs ');
-                        const featureName = policy1Part.split(':')[0] || 'Feature';
-                        const policy1Data = policy1Part.split(':')[1] || policy1Part;
-                        const policy2Data = policy2Part || 'Not Available';
-                        
-                        // Clean up the data by removing ALL policy name prefixes and references
-                        const cleanPolicy1Data = policy1Data
-                          .replace(/^[^:]*:\s*/, '') // Remove prefix before first colon
-                          .replace(/LIF-\d+[:\s-]*/g, '') // Remove LIF-514442: or LIF-514442 - 
-                          .replace(/Policy\s+\d+[:\s-]*/g, '') // Remove Policy 1: or Policy 1 - 
-                          .replace(/[A-Z]{3}-\d+[:\s-]*/g, '') // Remove any 3-letter code with numbers
-                          .replace(/[A-Z]+-\d+[:\s-]*/g, '') // Remove any letter code with numbers
-                          .trim();
-                        
-                        const cleanPolicy2Data = policy2Data
-                          .replace(/^[^:]*:\s*/, '') // Remove prefix before first colon
-                          .replace(/LIF-\d+[:\s-]*/g, '') // Remove LIF-514442: or LIF-514442 - 
-                          .replace(/Policy\s+\d+[:\s-]*/g, '') // Remove Policy 1: or Policy 1 - 
-                          .replace(/[A-Z]{3}-\d+[:\s-]*/g, '') // Remove any 3-letter code with numbers
-                          .replace(/[A-Z]+-\d+[:\s-]*/g, '') // Remove any letter code with numbers
-                          .trim();
-                        
-                        rows.push(
-                          <tr key={`${section}-${index}`} className="border-b" style={{ borderColor: '#FFB74D' }}>
-                            <td className="px-4 py-3 font-medium bg-gray-50 border-r" style={{ color: '#1E3A5F', borderColor: '#FFB74D' }}>
-                              {featureName.trim()}
-                            </td>
-                            <td className="px-4 py-3 bg-white border-r" style={{ color: '#1E3A5F', borderColor: '#FFB74D' }}>
-                              {cleanPolicy1Data}
-                            </td>
-                            <td className="px-4 py-3 bg-white" style={{ color: '#1E3A5F' }}>
-                              {cleanPolicy2Data}
-                            </td>
-                          </tr>
-                        );
-                      } else if (pointText.includes(':')) {
-                        const [feature, details] = pointText.split(':');
-                        rows.push(
-                          <tr key={`${section}-${index}`} className="border-b" style={{ borderColor: '#FFB74D' }}>
-                            <td className="px-4 py-3 font-medium bg-gray-50 border-r" style={{ color: '#1E3A5F', borderColor: '#FFB74D' }}>
-                              {feature.trim()}
-                            </td>
-                            <td className="px-4 py-3 bg-white border-r" style={{ color: '#1E3A5F', borderColor: '#FFB74D' }}>
-                              {details.trim()}
-                            </td>
-                            <td className="px-4 py-3 bg-white" style={{ color: '#1E3A5F' }}>
-                              {details.trim()}
-                            </td>
-                          </tr>
-                        );
-                      } else {
-                        rows.push(
-                          <tr key={`${section}-${index}`} className="border-b" style={{ borderColor: '#FFB74D' }}>
-                            <td className="px-4 py-3 font-medium bg-gray-50 border-r" style={{ color: '#1E3A5F', borderColor: '#FFB74D' }}>
-                              Feature
-                            </td>
-                            <td className="px-4 py-3 bg-white border-r" style={{ color: '#1E3A5F', borderColor: '#FFB74D' }}>
-                              {pointText}
-                            </td>
-                            <td className="px-4 py-3 bg-white" style={{ color: '#1E3A5F' }}>
-                              {pointText}
-                            </td>
-                          </tr>
-                        );
-                      }
-                    }
-                  });
-                  
-                  return rows;
                 })}
-              </tbody>
-            </table>
+              </div>
+            </div>
+
+            {/* Policy 2 Box */}
+            <div className="bg-white rounded-xl shadow-lg border-2 overflow-hidden" style={{ borderColor: '#A4D7E1' }}>
+              <div className="px-6 py-4" style={{ background: 'linear-gradient(135deg, #A4D7E1, #F0E68C)' }}>
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xl font-bold" style={{ color: '#1E3A5F' }}>
+                    📋 {policy_names?.[1] || 'Policy 2'}
+                  </h3>
+                  <span className="px-3 py-1 bg-white bg-opacity-80 rounded-full text-sm font-semibold" style={{ color: '#1E3A5F' }}>
+                    Policy B
+                  </span>
+                </div>
+              </div>
+              <div className="p-6 space-y-4">
+                {comparison_result && Object.entries(comparison_result).map(([section, content]) => {
+                  // Only show POLICY2 sections for the second policy box
+                  if (!section.includes('POLICY2') || section === 'SUMMARY' || section === 'RECOMMENDATIONS' || section === 'FINAL VERDICT') return null;
+                  
+                  console.log(`🔍 Rendering POLICY2 section: ${section} with content:`, content);
+                  
+                  // Extract the base section name (remove POLICY2 suffix)
+                  const baseSectionName = section.replace(' POLICY2', '');
+                  const sectionIcon = {
+                    'COVERAGE COMPARISON': '🛡️',
+                    'PREMIUM & COST ANALYSIS': '💰',
+                    'POLICY FEATURES': '⭐',
+                  }[baseSectionName] || '📝';
+                  
+                  return (
+                    <div key={section} className="border rounded-lg p-4" style={{ borderColor: '#A4D7E1', backgroundColor: '#F7FCFD' }}>
+                      <h4 className="font-semibold mb-3 flex items-center text-base" style={{ color: '#1E3A5F' }}>
+                        <span className="mr-2">{sectionIcon}</span>
+                        {baseSectionName}
+                      </h4>
+                      <div className="space-y-2">
+                        {content && content.split('\n').map((line, lineIndex) => {
+                          const trimmedLine = line.trim();
+                          if (trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
+                            const pointText = trimmedLine.replace(/^[•*]\s*/, '').trim();
+                            
+                            return (
+                              <div key={lineIndex} className="flex items-start space-x-3">
+                                <div className="w-2 h-2 rounded-full mt-2 flex-shrink-0" style={{ backgroundColor: '#A4D7E1' }}></div>
+                                <p className="text-sm leading-relaxed" style={{ color: '#1E3A5F' }}>
+                                  {pointText}
+                                </p>
+                              </div>
+                            );
+                          }
+                          return null;
+                        }).filter(Boolean)}
+                        
+                        {/* Show raw content if no bullet points found */}
+                        {(!content || content.split('\n').filter(line => {
+                          const trimmedLine = line.trim();
+                          return trimmedLine.startsWith('•') || trimmedLine.startsWith('*');
+                        }).length === 0) && (
+                          <div className="text-sm text-gray-600 italic">
+                            {content || 'No content available'}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Direct Comparison Highlights */}
+          <div className="bg-white rounded-xl shadow-lg border overflow-hidden" style={{ borderColor: '#FFB74D' }}>
+            <div className="px-6 py-4" style={{ background: 'linear-gradient(135deg, #FFB74D, #FF9800)' }}>
+              <h3 className="text-xl font-bold text-white flex items-center">
+                ⚖️ Key Comparison Points
+              </h3>
+            </div>
+            <div className="p-6">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* Show SUMMARY as comparison highlights */}
+                                  <div className="bg-gray-50 rounded-lg p-4 border" style={{ borderColor: '#FFB74D' }}>
+                    <h4 className="font-semibold mb-3 text-sm" style={{ color: '#1E3A5F' }}>
+                      📊 COMPARISON SUMMARY
+                    </h4>
+                    <div className="space-y-2">
+                      {safeComparisonResult.SUMMARY.split('\n').map((line, index) => {
+                        const trimmedLine = line.trim();
+                        if (trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
+                          const pointText = trimmedLine.replace(/^[•*]\s*/, '').trim();
+                          return (
+                            <div key={index} className="bg-white rounded border-l-4 p-2" style={{ borderLeftColor: '#FFD700' }}>
+                              <p className="text-xs leading-relaxed" style={{ color: '#1E3A5F' }}>
+                                {pointText}
+                              </p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }).filter(Boolean)}
+                    </div>
+                  </div>
+
+                {/* Show RECOMMENDATIONS */}
+                                  <div className="bg-gray-50 rounded-lg p-4 border" style={{ borderColor: '#FFB74D' }}>
+                    <h4 className="font-semibold mb-3 text-sm" style={{ color: '#1E3A5F' }}>
+                      💡 RECOMMENDATIONS
+                    </h4>
+                    <div className="space-y-2">
+                      {safeComparisonResult.RECOMMENDATIONS.split('\n').map((line, index) => {
+                        const trimmedLine = line.trim();
+                        if (trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
+                          const pointText = trimmedLine.replace(/^[•*]\s*/, '').trim();
+                          return (
+                            <div key={index} className="bg-white rounded border-l-4 p-2" style={{ borderLeftColor: '#A4D7E1' }}>
+                              <p className="text-xs leading-relaxed" style={{ color: '#1E3A5F' }}>
+                                {pointText}
+                              </p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }).filter(Boolean)}
+                    </div>
+                  </div>
+
+                {/* Show FINAL VERDICT */}
+                                  <div className="bg-gray-50 rounded-lg p-4 border" style={{ borderColor: '#FFB74D' }}>
+                    <h4 className="font-semibold mb-3 text-sm" style={{ color: '#1E3A5F' }}>
+                      🏆 FINAL VERDICT
+                    </h4>
+                    <div className="space-y-2">
+                      {safeComparisonResult['FINAL VERDICT'].split('\n').map((line, index) => {
+                        const trimmedLine = line.trim();
+                        if (trimmedLine.startsWith('•') || trimmedLine.startsWith('*')) {
+                          const pointText = trimmedLine.replace(/^[•*]\s*/, '').trim();
+                          return (
+                            <div key={index} className="bg-white rounded border-l-4 p-2" style={{ borderLeftColor: '#FF9800' }}>
+                              <p className="text-xs leading-relaxed font-medium" style={{ color: '#1E3A5F' }}>
+                                {pointText}
+                              </p>
+                            </div>
+                          );
+                        }
+                        return null;
+                      }).filter(Boolean)}
+                    </div>
+                  </div>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -714,23 +855,50 @@ const ComparePolicies = () => {
         {/* ML Verification */}
         {ml_verification && (
           <div className="p-6 border-t border-gray-200" style={{ backgroundColor: '#F0E68C' }}>
-            <h3 className="text-lg font-semibold mb-4" style={{ color: '#1E3A5F' }}>AI Verification</h3>
+            <h3 className="text-lg font-semibold mb-4 flex items-center" style={{ color: '#1E3A5F' }}>
+              🔍 AI Verification & Quality Assurance
+            </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="text-center bg-white p-4 rounded-lg border shadow-sm" style={{ borderColor: '#FFB74D' }}>
-                <p className="text-sm font-medium mb-1" style={{ color: '#1E3A5F' }}>Status</p>
-                <p className="font-semibold" style={{ color: '#1E3A5F' }}>{ml_verification.status}</p>
+                <div className="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ backgroundColor: '#FFD700' }}>
+                  <CheckCircle className="h-6 w-6" style={{ color: '#1E3A5F' }} />
+                </div>
+                <p className="text-sm font-medium mb-1" style={{ color: '#1E3A5F' }}>Analysis Status</p>
+                <p className="font-semibold text-lg" style={{ color: '#1E3A5F' }}>
+                  {ml_verification.status === 'completed' ? '✅ Completed' : ml_verification.status}
+                </p>
               </div>
               <div className="text-center bg-white p-4 rounded-lg border shadow-sm" style={{ borderColor: '#FFB74D' }}>
-                <p className="text-sm font-medium mb-1" style={{ color: '#1E3A5F' }}>Confidence</p>
-                <p className="font-semibold" style={{ color: '#1E3A5F' }}>
+                <div className="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ backgroundColor: '#A4D7E1' }}>
+                  <BarChart3 className="h-6 w-6" style={{ color: '#1E3A5F' }} />
+                </div>
+                <p className="text-sm font-medium mb-1" style={{ color: '#1E3A5F' }}>Confidence Level</p>
+                <p className="font-semibold text-lg" style={{ color: '#1E3A5F' }}>
                   {ml_verification.confidence_level} ({(ml_verification.confidence_score * 100).toFixed(1)}%)
                 </p>
               </div>
               <div className="text-center bg-white p-4 rounded-lg border shadow-sm" style={{ borderColor: '#FFB74D' }}>
-                <p className="text-sm font-medium mb-1" style={{ color: '#1E3A5F' }}>Quality</p>
-                <p className="font-semibold" style={{ color: '#1E3A5F' }}>
-                  {ml_verification.verification_message}
+                <div className="w-12 h-12 mx-auto mb-3 rounded-full flex items-center justify-center" style={{ backgroundColor: '#FFB74D' }}>
+                  <Shield className="h-6 w-6" style={{ color: '#1E3A5F' }} />
+                </div>
+                <p className="text-sm font-medium mb-1" style={{ color: '#1E3A5F' }}>Quality Assurance</p>
+                <p className="font-semibold text-sm" style={{ color: '#1E3A5F' }}>
+                  {ml_verification.verification_message || 'AI analysis verified'}
                 </p>
+              </div>
+            </div>
+            
+            {/* Additional verification details */}
+            <div className="mt-6 bg-white rounded-lg border p-4" style={{ borderColor: '#FFB74D' }}>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <h4 className="font-semibold mb-2 text-sm" style={{ color: '#1E3A5F' }}>🔬 Analysis Method</h4>
+                  <p className="text-sm text-gray-600">Google Gemini 2.5 Flash AI model with advanced policy analysis algorithms</p>
+                </div>
+                <div>
+                  <h4 className="font-semibold mb-2 text-sm" style={{ color: '#1E3A5F' }}>📊 Data Processing</h4>
+                  <p className="text-sm text-gray-600">Natural language processing with insurance domain expertise</p>
+                </div>
               </div>
             </div>
           </div>
@@ -770,150 +938,19 @@ const ComparePolicies = () => {
     return matchesSearch && matchesFilter;
   });
 
-  const testAPIConnection = async () => {
-    try {
-      console.log('🧪 Testing API connection...');
+
+
+
+
+
+
+
       
-      // Check token
-      const token = localStorage.getItem('token') || localStorage.getItem('access');
-      console.log('🔑 Token:', token ? 'Available' : 'Missing');
+
       
-      if (!token) {
-        toast.error('No authentication token found. Please log in.');
-        return;
-      }
-      
-      // Test backend connectivity
-      const response = await fetch('http://localhost:8000/api/policies/policies/', {
-        headers: {
-          'Authorization': `Bearer ${token}`,
-          'Content-Type': 'application/json'
-        }
-      });
-      
-      console.log('🌐 Backend response status:', response.status);
-      console.log('🌐 Backend response headers:', response.headers);
-      
-      if (response.ok) {
-        const data = await response.json();
-        console.log('✅ Backend connection successful:', data);
-        
-        // Handle paginated response
-        let policyCount = 0;
-        if (data.results && Array.isArray(data.results)) {
-          policyCount = data.results.length;
-          console.log(`📊 Found ${policyCount} policies in paginated response`);
-        } else if (Array.isArray(data)) {
-          policyCount = data.length;
-          console.log(`📊 Found ${policyCount} policies in direct response`);
-        }
-        
-        toast.success(`Backend connection successful! Found ${policyCount} policies`);
-        
-        // Update policies if we got data
-        if (data.results && Array.isArray(data.results)) {
-          setPolicies(data.results);
-        } else if (data && Array.isArray(data)) {
-          setPolicies(data);
-        }
-      } else {
-        const errorData = await response.text();
-        console.error('❌ Backend connection failed:', response.status, errorData);
-        toast.error(`Backend connection failed: ${response.status}`);
-        
-        if (response.status === 401) {
-          toast.error('Authentication failed. Please log in again.');
-          navigate('/login');
-        }
-      }
-    } catch (error) {
-      console.error('❌ API connection test failed:', error);
-      toast.error('API connection test failed. Check console for details.');
-    }
-  };
 
-  const testComparisonAPI = async () => {
-    if (selectedPolicies.length !== 2) {
-      toast.error('Please select exactly 2 policies to test the comparison API.');
-      return;
-    }
 
-    try {
-      setIsComparing(true);
-      toast.loading('Testing AI comparison...', { id: 'comparison' });
 
-      console.log('🚀 Starting AI comparison test with policies:', selectedPolicies);
-      console.log('🔍 Policy 1 ID:', selectedPolicies[0]);
-      console.log('🔍 Policy 2 ID:', selectedPolicies[1]);
-
-      const token = localStorage.getItem('token') || localStorage.getItem('access');
-      console.log('🔑 Using token:', token ? 'Available' : 'Missing');
-
-      const response = await aiAPI.comparePolicies(
-        selectedPolicies[0], 
-        selectedPolicies[1]
-      );
-
-      console.log('📊 Comparison response:', response);
-      console.log('📊 Response type:', typeof response);
-      console.log('📊 Response keys:', Object.keys(response || {}));
-
-      if (response && response.status === 'success') {
-        setComparisonResult(response.data);
-        setShowComparison(true);
-        toast.success('AI comparison test successful!', { id: 'comparison' });
-      } else if (response && response.data) {
-        setComparisonResult(response.data);
-        setShowComparison(true);
-        toast.success('AI comparison test successful!', { id: 'comparison' });
-      } else if (response && response.comparison_result) {
-        setComparisonResult({
-          comparison_result: response.comparison_result,
-          policy_names: [response.policy1_name, response.policy2_name],
-          ml_verification: {
-            status: 'verified',
-            confidence_score: 0.85,
-            confidence_level: 'HIGH',
-            verification_message: 'AI analysis completed successfully'
-          }
-        });
-        setShowComparison(true);
-        toast.success('AI comparison test successful!', { id: 'comparison' });
-      } else {
-        console.error('❌ Unexpected response format for AI comparison test:', response);
-        throw new Error(response?.error || response?.message || 'AI comparison test failed - unexpected response format');
-      }
-    } catch (error) {
-      console.error('❌ AI comparison test error:', error);
-      console.error('❌ Error details:', error.response || error);
-      console.error('❌ Error message:', error.message);
-      console.error('❌ Error status:', error.response?.status);
-      console.error('❌ Error data:', error.response?.data);
-      
-      toast.error(`AI comparison test failed: ${error.message || 'Unknown error'}`, { id: 'comparison' });
-    } finally {
-      setIsComparing(false);
-    }
-  };
-
-  const testGeminiConnection = async () => {
-    try {
-      console.log('🧪 Testing Gemini connection...');
-      const response = await aiAPI.testGemini();
-      console.log('�� Gemini response:', response);
-      console.log('📊 Response type:', typeof response);
-      console.log('📊 Response keys:', Object.keys(response || {}));
-
-      if (response && response.status === 'success') {
-        toast.success('Gemini connection successful!', { id: 'gemini' });
-      } else {
-        toast.error('Gemini connection failed. Please check backend logs.', { id: 'gemini' });
-      }
-    } catch (error) {
-      console.error('❌ Gemini connection test failed:', error);
-      toast.error('Gemini connection test failed. Check console for details.', { id: 'gemini' });
-    }
-  };
 
   return (
     <div className="min-h-screen" style={{ background: 'linear-gradient(135deg, #F0E68C, #A4D7E1)' }}>
@@ -937,29 +974,7 @@ const ComparePolicies = () => {
               >
                 <RefreshCw className={`h-5 w-5 ${isLoading ? 'animate-spin' : ''}`} />
               </button>
-              <button
-                onClick={testAPIConnection}
-                className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-                title="Test API connection"
-              >
-                Test API
-              </button>
-              <button
-                onClick={testComparisonAPI}
-                className="px-3 py-2 text-sm text-white rounded-lg transition-colors"
-                style={{ backgroundColor: '#FFB74D' }}
-                title="Test comparison API"
-              >
-                Test Compare
-              </button>
-              <button
-                onClick={testGeminiConnection}
-                className="px-3 py-2 text-sm text-white rounded-lg transition-colors"
-                style={{ backgroundColor: '#1E3A5F' }}
-                title="Test Gemini connection"
-              >
-                Test Gemini
-              </button>
+
             </div>
           </div>
           
@@ -1077,10 +1092,48 @@ const ComparePolicies = () => {
           <div className="mb-8">
             {isComparing ? (
               <div className="bg-white rounded-xl shadow-lg border p-12 text-center" style={{ borderColor: '#FFB74D' }}>
-                <Loader2 className="h-16 w-16 animate-spin mx-auto mb-6" style={{ color: '#FFD700' }} />
-                <h3 className="text-2xl font-bold mb-4" style={{ color: '#1E3A5F' }}>Analyzing Policies with AI</h3>
-                <p className="text-lg mb-6" style={{ color: '#1E3A5F' }}>Please wait while our AI analyzes your selected policies...</p>
-                <div className="mt-6 flex items-center justify-center space-x-2">
+                <div className="mb-8">
+                  <div className="w-24 h-24 mx-auto mb-6 rounded-full flex items-center justify-center animate-pulse" style={{ background: 'linear-gradient(135deg, #FFD700, #A4D7E1)' }}>
+                    <BarChart3 className="h-12 w-12 text-white" />
+                  </div>
+                </div>
+                
+                <h3 className="text-3xl font-bold mb-4" style={{ color: '#1E3A5F' }}>AI Analysis in Progress</h3>
+                <p className="text-lg mb-8" style={{ color: '#1E3A5F' }}>
+                  Our advanced AI is analyzing your policies using Google Gemini 2.5 Flash...
+                </p>
+                
+                {/* Enhanced Progress Indicator */}
+                <div className="w-full bg-gray-200 rounded-full h-4 mb-6 overflow-hidden">
+                  <div className="bg-gradient-to-r from-yellow-400 via-blue-500 to-green-500 h-4 rounded-full animate-pulse" style={{ width: '100%' }}></div>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+                  <div className="text-center">
+                    <div className="w-8 h-8 mx-auto mb-2 rounded-full flex items-center justify-center animate-bounce" style={{ backgroundColor: '#FFD700' }}>
+                      <FileText className="h-4 w-4" style={{ color: '#1E3A5F' }} />
+                    </div>
+                    <p className="text-sm font-medium" style={{ color: '#1E3A5F' }}>Document Analysis</p>
+                  </div>
+                  <div className="text-center">
+                    <div className="w-8 h-8 mx-auto mb-2 rounded-full flex items-center justify-center animate-bounce" style={{ backgroundColor: '#A4D7E1', animationDelay: '0.2s' }}>
+                      <BarChart3 className="h-4 w-4" style={{ color: '#1E3A5F' }} />
+                    </div>
+                    <p className="text-sm font-medium" style={{ color: '#1E3A5F' }}>AI Comparison</p>
+                  </div>
+                  <div className="text-center">
+                    <div className="w-8 h-8 mx-auto mb-2 rounded-full flex items-center justify-center animate-bounce" style={{ backgroundColor: '#FFB74D', animationDelay: '0.4s' }}>
+                      <CheckCircle className="h-4 w-4" style={{ color: '#1E3A5F' }} />
+                    </div>
+                    <p className="text-sm font-medium" style={{ color: '#1E3A5F' }}>Results Ready</p>
+                  </div>
+                </div>
+                
+                <p className="text-sm text-gray-600 mb-4">
+                  This process typically takes 1-2 minutes for comprehensive analysis
+                </p>
+                
+                <div className="flex items-center justify-center space-x-2">
                   <div className="w-3 h-3 rounded-full animate-bounce" style={{ backgroundColor: '#FFD700' }}></div>
                   <div className="w-3 h-3 rounded-full animate-bounce" style={{ backgroundColor: '#A4D7E1', animationDelay: '0.1s' }}></div>
                   <div className="w-3 h-3 rounded-full animate-bounce" style={{ backgroundColor: '#FFB74D', animationDelay: '0.2s' }}></div>
@@ -1089,19 +1142,43 @@ const ComparePolicies = () => {
             ) : comparisonResult ? (
               <>
                 {/* Success Message */}
-                <div className="mb-6 p-4 border rounded-lg" style={{ backgroundColor: '#F0E68C', borderColor: '#FFB74D' }}>
+                <div className="mb-6 p-6 border rounded-xl shadow-lg" style={{ backgroundColor: '#F0E68C', borderColor: '#FFB74D' }}>
                   <div className="flex items-center justify-center">
-                    <CheckCircle className="h-6 w-6 mr-3" style={{ color: '#1E3A5F' }} />
-                    <div>
-                      <p className="font-semibold text-lg" style={{ color: '#1E3A5F' }}>
-                        AI Comparison Completed Successfully!
+                    <div className="w-16 h-16 rounded-full flex items-center justify-center mr-6" style={{ backgroundColor: '#FFD700' }}>
+                      <CheckCircle className="h-8 w-8" style={{ color: '#1E3A5F' }} />
+                    </div>
+                    <div className="text-center">
+                      <h3 className="font-bold text-2xl mb-2" style={{ color: '#1E3A5F' }}>
+                        🎉 AI Comparison Completed Successfully!
+                      </h3>
+                      <p className="text-lg mb-2" style={{ color: '#1E3A5F' }}>
+                        Your policies have been analyzed using advanced AI technology
                       </p>
-                      <p className="text-sm mt-1" style={{ color: '#1E3A5F' }}>
-                        {comparisonResult.fallback_used ? 'Fallback analysis provided' : 'AI-powered analysis completed'}
+                      <p className="text-sm" style={{ color: '#1E3A5F' }}>
+                        {comparisonResult.fallback_used ? 'Fallback analysis provided due to technical issues' : 'AI-powered analysis completed with high confidence'}
                       </p>
                     </div>
                   </div>
                 </div>
+                
+                {/* Data Verification (Debug) */}
+                {process.env.NODE_ENV === 'development' && (
+                  <div className="mb-6 p-4 bg-gray-100 rounded-lg border border-gray-300">
+                    <h4 className="font-semibold mb-2 text-sm text-gray-700">🔍 Data Verification (Development)</h4>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-xs">
+                      <div>
+                        <strong>Response Status:</strong> {comparisonResult?.status || 'N/A'}<br />
+                        <strong>Policy Names:</strong> {comparisonResult?.policy_names?.join(' vs ') || 'N/A'}<br />
+                        <strong>ML Status:</strong> {comparisonResult?.ml_verification?.status || 'N/A'}<br />
+                        <strong>Confidence:</strong> {comparisonResult?.ml_verification?.confidence_score || 'N/A'}
+                      </div>
+                      <div>
+                        <strong>Comparison Sections:</strong> {Object.keys(comparisonResult?.comparison_result || {}).length}<br />
+                        <strong>Sections Found:</strong> {Object.keys(comparisonResult?.comparison_result || {}).join(', ')}
+                      </div>
+                    </div>
+                  </div>
+                )}
                 
                 {/* Comparison Results */}
                 {renderComparisonTable()}

@@ -16,7 +16,7 @@ import PolicyDetail from './pages/PolicyDetail';
 import ChatView from './pages/ChatView';
 import ComparePolicies from './pages/ComparePolicies';
 import ConversationHistory from './pages/ConversationHistory';
-import TestAuth from './pages/TestAuth';
+
 
 // Context
 import { AuthProvider } from './context/AuthContext';
@@ -26,7 +26,12 @@ function App() {
   return (
     <AuthProvider>
       <ToastProvider>
-        <Router>
+        <Router
+          future={{
+            v7_startTransition: true,
+            v7_relativeSplatPath: true
+          }}
+        >
           <div className="min-h-screen bg-bg-primary">
             <Navbar />
             <AnimatePresence mode="wait">
@@ -41,7 +46,7 @@ function App() {
                 <Route path="/chat" element={<ChatView />} />
                 <Route path="/compare" element={<ComparePolicies />} />
                 <Route path="/history" element={<ConversationHistory />} />
-                <Route path="/test-auth" element={<TestAuth />} />
+
               </Routes>
             </AnimatePresence>
             <Footer />
