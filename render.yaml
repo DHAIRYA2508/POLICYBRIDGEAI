@@ -16,4 +16,4 @@ services:
         value: 'False'
       - key: GEMINI_API_KEY
         sync: false # User must provide this in the Render dashboard
-    autoDeploy: false
+    autoDeploy: true
