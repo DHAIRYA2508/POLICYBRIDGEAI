@@ -60,10 +60,10 @@ const formatPolicySummary = (summaryText) => {
   // Clean the text from any formatting symbols and remove introductory text
   const cleanText = summaryText
     .replace(/[•◦▪▫★☆♦◆■□▲△▼▽]/g, '') // Remove bullet symbols
-    .replace(/^\s*[\*\-\+\•]\s*/gm, '') // Remove bullet prefixes at line start
+    .replace(/^\s*[*\-+•]\s*/gm, '') // Remove bullet prefixes at line start
     .replace(/#{1,6}\s*/g, '') // Remove markdown headers
     .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1') // Remove bold/italic markdown
-    .replace(/^\s*[\*\-\+]\s*/gm, '') // Remove list markers
+    .replace(/^\s*[*\-+]\s*/gm, '') // Remove list markers
     .replace(/\s*\*\s*/g, ' ') // Remove any remaining asterisks with spaces
     .replace(/\s*\+\s*/g, ' ') // Remove any remaining plus signs with spaces
     .replace(/\s*-\s*/g, ' ') // Remove any remaining minus signs with spaces
@@ -270,7 +270,7 @@ const formatPolicySummary = (summaryText) => {
     const contentLines = content.split('\n').filter(line => line.trim());
     const cleanLines = contentLines.map(line => 
       line
-        .replace(/^[\s\*\-\+\•◦▪▫★☆♦◆■□▲△▼▽]+/, '') // Remove leading symbols
+        .replace(/^[\s*\-+•◦▪▫★☆♦◆■□▲△▼▽]+/, '') // Remove leading symbols
         .replace(/\s*\*\s*/g, ' ') // Remove any remaining asterisks
         .replace(/\s*\+\s*/g, ' ') // Remove any remaining plus signs
         .replace(/\s*-\s*/g, ' ') // Remove any remaining minus signs
@@ -339,9 +339,9 @@ const DashboardEnhanced = () => {
   const [selectedFilter, setSelectedFilter] = useState('all');
   const [sortBy, setSortBy] = useState('recent');
   const [policies, setPolicies] = useState([]);
-  const [stats, setStats] = useState({});
+  const [, setStats] = useState({});
   const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [, setRefreshing] = useState(false);
   const [conversationCount, setConversationCount] = useState(0);
 
   // Fetch dashboard data function
@@ -373,6 +373,7 @@ const DashboardEnhanced = () => {
       // Fetch stats
       try {
         const statsResponse = await policyAPI.getPolicyStats();
+        // stats variable removed as it was unused in JSX
         setStats(statsResponse?.data || {});
       } catch (statsError) {
         console.warn('Could not fetch stats:', statsError);
@@ -1825,10 +1826,10 @@ const DashboardEnhanced = () => {
                               // Clean the text from any formatting symbols and remove introductory text
                               const cleanText = summaryText
                                 .replace(/[•◦▪▫★☆♦◆■□▲△▼▽]/g, '')
-                                .replace(/^\s*[\*\-\+\•]\s*/gm, '')
+                                .replace(/^\s*[*\-+•]\s*/gm, '')
                                 .replace(/#{1,6}\s*/g, '')
                                 .replace(/\*{1,2}([^*]+)\*{1,2}/g, '$1')
-                                .replace(/^\s*[\*\-\+]\s*/gm, '')
+                                .replace(/^\s*[*\-+]\s*/gm, '')
                                 .replace(/^Here's a comprehensive and detailed analysis of the .* policy document:\s*/i, '') // Remove intro text
                                 .replace(/^.*comprehensive.*analysis.*document:\s*/i, '') // Remove any variation of intro text
                                 .trim();
@@ -1865,7 +1866,7 @@ const DashboardEnhanced = () => {
 
                                 const colors = getCategoryColor(header);
                                 const contentLines = content.split('\n').filter(line => line.trim());
-                                const cleanLines = contentLines.map(line => line.replace(/^[\s\*\-\+\•◦▪▫★☆♦◆■□▲△▼▽]+/, '').trim());
+                                const cleanLines = contentLines.map(line => line.replace(/^[\s*\-+•◦▪▫★☆♦◆■□▲△▼▽]+/, '').trim());
 
                                 return `
                                   <div style="border: 1px solid ${colors.border}; background: ${colors.bg}; border-radius: 8px; margin-bottom: 16px; overflow: hidden; box-shadow: 0 1px 3px rgba(0,0,0,0.1);">
