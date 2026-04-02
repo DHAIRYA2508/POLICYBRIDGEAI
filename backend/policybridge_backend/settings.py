@@ -168,6 +168,10 @@ MAX_UPLOAD_SIZE = 10 * 1024 * 1024  # 10MB
 ALLOWED_FILE_TYPES = ['pdf', 'docx', 'txt']
 
 # Logging Configuration
+LOGS_DIR = os.path.join(BASE_DIR, 'logs')
+if not os.path.exists(LOGS_DIR):
+    os.makedirs(LOGS_DIR, exist_ok=True)
+
 LOGGING = {
     'version': 1,
     'disable_existing_loggers': False,
