@@ -6,7 +6,13 @@ from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
 
+from django.http import JsonResponse
+
+def health_check(request):
+    return JsonResponse({"status": "ok", "message": "PolicyBridge AI Backend is Running"})
+
 urlpatterns = [
+    path('', health_check),
     path('admin/', admin.site.urls),
     # Custom app URLs - make API endpoints clearer
     path('api/users/', include('users.urls')),
