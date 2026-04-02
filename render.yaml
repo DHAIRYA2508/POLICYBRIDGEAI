@@ -5,7 +5,7 @@ services:
     region: ohio
     plan: free
     rootDir: backend
-    buildCommand: "pip install -r requirements.txt && python manage.py collectstatic --no-input && python manage.py migrate"
+    buildCommand: "pip install --no-cache-dir -r requirements.txt && python manage.py collectstatic --no-input && python manage.py migrate"
     startCommand: "gunicorn policybridge_backend.wsgi:application"
     envVars:
       - key: PYTHON_VERSION
